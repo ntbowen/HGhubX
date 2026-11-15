@@ -387,14 +387,14 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 /* —— 进度条 —— */
 .desktop-seek { position: relative; height: 19px; display: flex; align-items: center; cursor: pointer; }
 .desktop-seek-track {
-  pointer-events: none; position: absolute; height: 2px; inset: auto 0;
+  pointer-events: none; position: absolute; height: 2px; top:auto; right:0; bottom:auto; left:0;
   background: rgba(255,255,255,.16); border-radius: 2px; overflow: hidden; transition: height .16s;
 }
 .desktop-seek-buffer { position: absolute; height: 100%; background: rgba(255,255,255,.10); }
 .desktop-seek-played { position: absolute; height: 100%; background: #80bbdf; border-radius: inherit; }
 .desktop-seek:hover .desktop-seek-track, .desktop-seek:focus-within .desktop-seek-track { height: 4px; }
 .desktop-seek > input {
-  -webkit-appearance: none; appearance: none; position: absolute; inset: 0;
+  -webkit-appearance: none; appearance: none; position: absolute; top:0; right:0; bottom:0; left:0;
   width: 100%; height: 19px; background: transparent; margin: 0; cursor: pointer; opacity: 0;
 }
 
@@ -426,7 +426,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
   transform: translateZ(0);
 }
 .player-surface::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 30;
+  content: ""; position: absolute; top:0; right:0; bottom:0; left:0; pointer-events: none; z-index: 30;
   border-radius: 12px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.055);
 }
@@ -436,7 +436,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 /* —— 移动端沉浸全屏：固定铺满视口，不受外层滚动容器影响 —— */
 .fs-immersive {
   position: fixed;
-  inset: 0;
+  top:0; right:0; bottom:0; left:0;
   width: 100vw; height: 100vh;
   width: 100dvw; height: 100dvh;
   z-index: 45;

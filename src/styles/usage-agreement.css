@@ -1,6 +1,6 @@
 /* Startup agreement owns the viewport; no application surface is mounted behind it. */
 .hg-agreement {
-  position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center;
+  position:fixed; top:0; right:0; bottom:0; left:0; z-index:10000; display:flex; align-items:center; justify-content:center;
   padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
   background:var(--p-bg,#101113); color:var(--p-on,#f2f3f5); font-family:var(--font-sans,system-ui,sans-serif);
 }
