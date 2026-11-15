@@ -24,7 +24,9 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {
-    target: "es2021",
+    // 机顶盒/车机的系统 WebView 常停留在 Chromium 80+；es2021 的逻辑赋值符
+    // 需要 Chrome 85，降到 es2020 保证老 WebView 可解析（现代浏览器不受影响）
+    target: "es2020",
     minify: "esbuild",
     sourcemap: false,
   },
