@@ -3,7 +3,8 @@ import { Loader } from "./ios/effects";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Hls from "hls.js";
-import { fmtTime, platform, playlist } from "../api";
+import { fmtTime, platform } from "../api";
+import { connectNativeMedia, playbackSource } from "../mediaTransport";
 import { mediaErrorMessage } from "../mediaErrors";
 import { mediaHost, mediaResource, observeHls, usePlayerDiagnostics } from "../playbackDiagnostics";
 import { usePlaybackActivity } from "../usePlaybackActivity";
@@ -36,6 +37,7 @@ export default function Player({
   onTogglePlay, onToggleMute, controls = true, className = "", diagnosticContext = {},
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const latestSource = useRef(src); latestSource.current = src;
   const hlsRef = useRef<Hls | null>(null);
   const recoveryRef = useRef<HlsRecovery | null>(null);
   const { trace, requestSeek } = usePlayerDiagnostics(videoRef, hlsRef, { view: "post_detail", ...diagnosticContext, active, resource: mediaResource(src) });
@@ -71,12 +73,13 @@ export default function Player({
     setErrMsg("");
     setWaiting(false);
     const resume = proxyRecovery.resume();
-    const url = playlist(src);
-    trace("source.load", { engine: Hls.isSupported() ? "hls.js" : "native", auto_play: autoPlay, resource: mediaResource(src), host: mediaHost(src) });
+    const source = playbackSource(src, Hls.isSupported());
+    let disconnectNative: (() => void) | undefined;
+    trace("source.load", { engine: source.engine, auto_play: autoPlay, resource: mediaResource(src), host: mediaHost(src) });
 
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
-    if (Hls.isSupported()) {
+    if (source.engine === "hls.js") {
       const hls = new Hls({
         // 禁用从插播/内容引导 JSON 派生直连 URL 的可选功能。
         interstitialsController: undefined,
@@ -103,7 +106,7 @@ export default function Player({
       });
       hlsRef.current = hls;
       const recovery = createHlsRecovery({
-        hls, video, url,
+        hls, video, url: source.url,
         isCurrent: () => hlsRef.current === hls,
         isActive: activity.isActive,
         resumePlayback: () => activity.play("media_recovery", true),
@@ -118,7 +121,7 @@ export default function Player({
       });
       recoveryRef.current = recovery;
       observeHls(hls, trace);
-      hls.loadSource(url);
+      hls.loadSource(source.url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (activity.isActive()) hls.startLoad(resume?.time ?? -1);
@@ -130,12 +133,15 @@ export default function Player({
       });
       hls.on(Hls.Events.ERROR, (_e, data) => recovery.error(data));
     } else {
-      // Safari / 部分 WebView 原生支持 HLS
-      video.src = url;
-      if (autoPlay && !resume) activity.play("native_autoplay", true);
+      disconnectNative = connectNativeMedia(video, source, {
+        isCurrent: () => latestSource.current === src && videoRef.current === video,
+        onReady: () => { if (activity.isPlayWanted() && !resume) activity.play("native_autoplay", true); },
+        onError: message => { trace("source.transport_error"); setWaiting(false); setPlaying(false); setErrMsg(message); },
+      });
     }
 
     return () => {
+      disconnectNative?.();
       recoveryRef.current?.dispose(); recoveryRef.current = null;
       trace("source.cleanup");
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }

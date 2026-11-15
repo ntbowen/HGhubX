@@ -1,13 +1,13 @@
 // Local-only headless playback checks. No upstream APIs, credentials or Tauri IPC are used.
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+import { parseArgs, promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { createServer as createViteServer } from "vite";
 
@@ -17,11 +17,11 @@ const { values: args } = parseArgs({ options: {
   scenarios: { type: "string", default: "seek,legacy,stall,lifecycle,mms,gesture,proxy" }, help: { type: "boolean" },
 } });
 if (args.help) {
-  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms,gesture,proxy,recovery,review]");
+  console.log("pnpm test:playback [--media-dir DIR] [--output NEW_DIR] [--browser-executable PATH] [--scenarios seek,legacy,stall,lifecycle,mms,gesture,proxy,ios-native,recovery,review]");
   process.exit(0);
 }
 const scenarios = args.scenarios.split(",");
-assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms", "gesture", "proxy", "recovery", "review"].includes(s)), "Unknown scenario");
+assert(scenarios.length && scenarios.every(s => ["seek", "legacy", "stall", "lifecycle", "mms", "gesture", "proxy", "ios-native", "recovery", "review"].includes(s)), "Unknown scenario");
 const output = resolve(args.output || join(root, "test-results", "playback", new Date().toISOString().replace(/[:.]/g, "-")));
 await mkdir(dirname(output), { recursive: true });
 await mkdir(output); // Refuse to overwrite artifacts from an earlier run.
@@ -533,20 +533,49 @@ async function explicitRecoveryCheck(page) {
 }
 
 try {
-  let mediaDir = args["media-dir"] && resolve(args["media-dir"]);
-  if (!mediaDir) {
-    temporaryMedia = await mkdtemp(join(tmpdir(), "hghubx-playback-")); mediaDir = temporaryMedia;
-    try {
-      execFileSync(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "90", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", "-hls_segment_filename", join(mediaDir, "seg%03d.ts"), join(mediaDir, "list.m3u8")], { timeout: 60000, stdio: "pipe" });
-    } catch { throw new Error("Cannot generate HLS fixture: install FFmpeg (libx264/AAC), set FFMPEG_PATH, or pass --media-dir DIR"); }
+  if (scenarios.some(name => name !== "ios-native")) {
+    let mediaDir = args["media-dir"] && resolve(args["media-dir"]);
+    if (!mediaDir) {
+      temporaryMedia = await mkdtemp(join(tmpdir(), "hghubx-playback-")); mediaDir = temporaryMedia;
+      try {
+        execFileSync(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "90", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", "-hls_segment_filename", join(mediaDir, "seg%03d.ts"), join(mediaDir, "list.m3u8")], { timeout: 60000, stdio: "pipe" });
+      } catch { throw new Error("Cannot generate HLS fixture: install FFmpeg (libx264/AAC), set FFMPEG_PATH, or pass --media-dir DIR"); }
+    }
+    vite = await createViteServer({ root, server: { host: "127.0.0.1", port: 0, strictPort: false, hmr: false, open: false } });
+    await vite.listen(); report.ui = `http://127.0.0.1:${vite.httpServer.address().port}`;
+    media = await serveMedia(mediaDir); report.media = `http://127.0.0.1:${media.address().port}`;
+    browser = await chromium.launch({ headless: true, executablePath: args["browser-executable"], args: ["--autoplay-policy=no-user-gesture-required"] });
+    report.browser_version = browser.version();
   }
-  vite = await createViteServer({ root, server: { host: "127.0.0.1", port: 0, strictPort: false, hmr: false, open: false } });
-  await vite.listen(); report.ui = `http://127.0.0.1:${vite.httpServer.address().port}`;
-  media = await serveMedia(mediaDir); report.media = `http://127.0.0.1:${media.address().port}`;
-  browser = await chromium.launch({ headless: true, executablePath: args["browser-executable"], args: ["--autoplay-policy=no-user-gesture-required"] });
-  report.browser_version = browser.version();
   for (const name of scenarios) {
     const dir = join(output, name); await mkdir(dir);
+    if (name === "ios-native") {
+      const result = { name, status: "running", started: new Date().toISOString() }; report.cases.push(result);
+      let stdout = "", stderr = "";
+      try {
+        const child = await promisify(execFile)(process.execPath, [join(root, "scripts/test-ios-native-media.mjs")], {
+          cwd: root, encoding: "utf8", timeout: 180000, maxBuffer: 2 * 1024 * 1024,
+          env: { ...process.env, ...(args["browser-executable"] ? { BROWSER_EXECUTABLE: args["browser-executable"] } : {}) },
+        });
+        stdout = child.stdout; stderr = child.stderr;
+        result.metrics = { exit_code: 0, transport: "mock IPC/HLS; real Player/VideoSurface" };
+        result.status = "passed"; console.log(`PASS ${name}: ${JSON.stringify(result.metrics)}`);
+      } catch (error) {
+        stdout = error.stdout || ""; stderr = error.stderr || "";
+        result.status = "failed"; result.error = error.message;
+        result.exit_code = typeof error.code === "number" ? error.code : null;
+        result.signal = error.signal || null;
+        console.error(`FAIL ${name}: ${error.message}`);
+      } finally {
+        if (stdout) process.stdout.write(stdout);
+        if (stderr) process.stderr.write(stderr);
+        await writeFile(join(dir, "stdout.log"), stdout);
+        await writeFile(join(dir, "stderr.log"), stderr);
+        result.finished = new Date().toISOString();
+        await writeFile(join(output, "report.json"), JSON.stringify(report, null, 2) + "\n");
+      }
+      continue;
+    }
     const context = await browser.newContext({ ...(name === "gesture" ? {userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 Version/17.1 Mobile/15E148 Safari/604.1",hasTouch:true} : {}), viewport: { width: 1000, height: 900 } });
     await context.exposeBinding("collectPlaybackLogs", (_source, entries) => {
       for (const e of entries) jsonl(join(dir, "playback.jsonl"), { ts: e.data.at, event: `web.${e.event}`, data: e.data, transport: "browser-fixture" });
