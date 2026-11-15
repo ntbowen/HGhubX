@@ -70,6 +70,8 @@ export default function UsageAgreement({ onAccept }: { onAccept: () => void }) {
 
   // 鼠标/触控按住拖动滚动；交互元素上不触发，避免抢按钮点击
   const onDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // 触屏走浏览器原生滚动，手动拖动仅服务鼠标/手写笔，避免双重滚动抖动
+    if (event.pointerType === "touch") return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button,input,label,a,[contenteditable]")) return;
     const el = getScroller();
