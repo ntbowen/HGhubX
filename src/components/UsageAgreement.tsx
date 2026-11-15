@@ -26,16 +26,22 @@ export default function UsageAgreement({ onAccept }: { onAccept: () => void }) {
   const [error, setError] = useState("");
   const [exiting, setExiting] = useState(false);
 
-  // 电视/横屏没有滚轮滚动条：找出真正可滚动的元素（矮屏模式下是整张卡片）
+  // 电视/横屏没有滚轮滚动条：找出真正可滚动的元素。
+  // 注意 overflow:visible/hidden 的元素 scrollHeight 也会大于 clientHeight，必须查计算样式。
   const getScroller = () => {
+    const scrollable = (el: HTMLElement | null) => {
+      if (!el) return false;
+      const oy = getComputedStyle(el).overflowY;
+      return (oy === "auto" || oy === "scroll" || oy === "overlay") && el.scrollHeight > el.clientHeight + 1;
+    };
     const inner = scrollRef.current;
-    if (inner && inner.scrollHeight > inner.clientHeight + 1) return inner;
+    if (scrollable(inner)) return inner;
     const card = panelRef.current;
-    return card && card.scrollHeight > card.clientHeight + 1 ? card : inner;
+    return scrollable(card) ? card : inner;
   };
 
   useEffect(() => {
-    const step: Record<string, number> = { ArrowDown: 56, ArrowUp: -56, PageDown: 320, PageUp: -320 };
+    const step: Record<string, number> = { ArrowDown: 56, ArrowUp: -56, PageDown: 320, PageUp: -320, Down: 56, Up: -56 };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); setDeclined(true); }
       // 遥控器方向键/PageUp/PageDown 直接滚动协议区，无需先聚焦
