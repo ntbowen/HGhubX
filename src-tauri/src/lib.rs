@@ -249,6 +249,7 @@ pub fn run() {
             api::api_topic,
             api::api_tags,
             api::api_tag_videos,
+            api::api_post_tag,
             api::api_category,
             api::api_rank,
             api::api_search,

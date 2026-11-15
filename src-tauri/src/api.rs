@@ -796,7 +796,7 @@ pub async fn api_tags(state: State<'_, Api>) -> Result<Value, String> {
     state.get("/api/tags").await
 }
 
-/// 按标签取视频：后端按中文标签名匹配（网页 /tag/<slug>/ 实际请求 /api/videos/tag/<name>）。
+/// 按标签取短剧：后端按中文标签名匹配；社区标签需使用 api_post_tag。
 #[tauri::command]
 pub async fn api_tag_videos(
     state: State<'_, Api>,
@@ -807,6 +807,22 @@ pub async fn api_tag_videos(
     let encoded: String = url::form_urlencoded::byte_serialize(tag.as_bytes()).collect();
     state
         .get(&format!("/api/videos/tag/{encoded}?page={page}&size={size}"))
+        .await
+}
+
+/// 按标签取吃瓜帖：`/api/posts/tag/{name}` 按标签名称匹配，不接受网页 slug。
+#[tauri::command]
+pub async fn api_post_tag(
+    state: State<'_, Api>,
+    tag: String,
+    page: u32,
+    size: u32,
+) -> Result<Value, String> {
+    let encoded: String = url::form_urlencoded::byte_serialize(tag.as_bytes()).collect();
+    let page = page.max(1);
+    let size = size.clamp(1, 100);
+    state
+        .get(&format!("/api/posts/tag/{encoded}?page={page}&size={size}"))
         .await
 }
 

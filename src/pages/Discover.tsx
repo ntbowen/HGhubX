@@ -2,10 +2,11 @@ import { Button, Surface } from "../components/ios/controls";
 import { Loader } from "../components/ios/effects";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, fmt } from "../api";
-import type { TopicCard, TopicDetail, VideoCard } from "../types";
+import type { Post, TopicCard, TopicDetail, VideoCard } from "../types";
 import { useStore } from "../store";
 import { MAX_BLOCKED_TAGS, MAX_TAG_LENGTH, useContentPreferences } from "../contentPreferences";
-import { Masonry } from "../components/cards";
+import { Masonry, MediaCard } from "../components/cards";
+import { FilteredContent } from "../components/FilteredContent";
 import { InplaceSearch } from "../components/InplaceSearch";
 import { Empty, Img } from "../components/ui";
 import { IBack, IGrid, IGlobe, IRefresh, ISearch } from "../icons";
@@ -281,7 +282,7 @@ export function TagsPage({ onBack, wide }: { onBack: () => void; wide: boolean }
                   <Button key={t.id} onClick={() => push({ kind: "tag", tag: t.name, name: t.name })}
                     className="ios-filter-pill max-w-full min-w-0 flex items-center gap-2 text-left">
                     <span className="min-w-0 whitespace-normal break-all">{t.name}</span>
-                    {!!t.hot_score && <span className="shrink-0 text-[12px] text-dim">{fmt(t.hot_score)}</span>}
+                    {!!t.hot_score && <span aria-label={`热度 ${fmt(t.hot_score)}`} className="shrink-0 text-[12px] text-dim">热度 {fmt(t.hot_score)}</span>}
                   </Button>
                 ))}
               </div>
@@ -305,54 +306,97 @@ export function TagPage({ tag, name, onBack, wide }: { tag: string; name: string
   const tagBlocked = isTagBlocked(name);
   const cannotAdd = !name.trim() || name.trim().length > MAX_TAG_LENGTH || preferences.blockedTags.length >= MAX_BLOCKED_TAGS;
   const [searching, setSearching] = useState(false);
-  const [items, setItems] = useState<VideoCard[]>([]);
-  const [page, setPage] = useState(0);
-  const [pages, setPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [loadedTag, setLoadedTag] = useState(tag);
-  const busy = useRef(false);
-  const sequence = useRef(0);
-  const sentinel = useRef<HTMLDivElement>(null);
+  const [videos, setVideos] = useState<VideoCard[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [videoPage, setVideoPage] = useState(0);
+  const [postPage, setPostPage] = useState(0);
+  const [videoPages, setVideoPages] = useState(1);
+  const [postPages, setPostPages] = useState(1);
+  const [videoTotal, setVideoTotal] = useState(0);
+  const [postTotal, setPostTotal] = useState(0);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [postLoading, setPostLoading] = useState(true);
+  const [videoErr, setVideoErr] = useState("");
+  const [postErr, setPostErr] = useState("");
+  const [loadedVideoTag, setLoadedVideoTag] = useState("");
+  const [loadedPostTag, setLoadedPostTag] = useState("");
+  const busy = useRef({ video: false, post: false });
+  const sequence = useRef({ video: 0, post: 0 });
+  const videoSentinel = useRef<HTMLDivElement>(null);
+  const postSentinel = useRef<HTMLDivElement>(null);
   const scrollContainer = useRef<HTMLDivElement>(null);
-  const current = loadedTag === tag;
-  const visibleItems = current ? items : [];
+  const currentVideos = loadedVideoTag === tag;
+  const currentPosts = loadedPostTag === tag;
+  const visibleVideos = currentVideos ? videos : [];
+  const visiblePosts = currentPosts ? posts : [];
 
-  const load = useCallback(async (next: number, reset = false) => {
-    if (busy.current && !reset) return;
-    busy.current = true;
-    const token = ++sequence.current;
-    setLoading(true); setErr("");
+  const load = useCallback(async (kind: "video" | "post", next: number, reset = false) => {
+    if (busy.current[kind] && !reset) return;
+    busy.current[kind] = true;
+    const token = ++sequence.current[kind];
+    if (kind === "video") { setVideoLoading(true); setVideoErr(""); }
+    else { setPostLoading(true); setPostErr(""); }
     try {
-      const result = await api.tagVideos(tag, next, 20);
-      if (sequence.current !== token) return;
-      setItems(previous => {
-        const base = reset ? [] : previous;
-        const seen = new Set(base.map(item => item.id));
-        return [...base, ...(result?.items ?? []).filter(item => !seen.has(item.id))];
-      });
-      setLoadedTag(tag); setPage(next); setPages(result?.pagination?.pages || next);
+      if (kind === "video") {
+        const result = await api.tagVideos(tag, next, 20);
+        if (sequence.current.video !== token) return;
+        setVideos(previous => {
+          const base = reset ? [] : previous;
+          const seen = new Set(base.map(item => item.id));
+          return [...base, ...(result?.items ?? []).filter(item => !seen.has(item.id))];
+        });
+        setLoadedVideoTag(tag); setVideoPage(next); setVideoPages(result?.pagination?.pages || next); setVideoTotal(result?.pagination?.total || 0);
+      } else {
+        const result = await api.postTag(name, next, 20);
+        if (sequence.current.post !== token) return;
+        setPosts(previous => {
+          const base = reset ? [] : previous;
+          const seen = new Set(base.map(item => item.id));
+          return [...base, ...(result?.items ?? []).filter(item => !seen.has(item.id))];
+        });
+        setLoadedPostTag(tag); setPostPage(next); setPostPages(result?.pagination?.pages || next); setPostTotal(result?.pagination?.total || 0);
+      }
     } catch (error) {
-      if (sequence.current === token) setErr(error instanceof Error ? error.message : "加载失败，请重试");
+      if (sequence.current[kind] === token) {
+        const message = error instanceof Error ? error.message : "加载失败，请重试";
+        if (kind === "video") setVideoErr(message); else setPostErr(message);
+      }
     } finally {
-      if (sequence.current === token) { busy.current = false; setLoading(false); }
+      if (sequence.current[kind] === token) {
+        busy.current[kind] = false;
+        if (kind === "video") setVideoLoading(false); else setPostLoading(false);
+      }
     }
-  }, [tag]);
+  }, [tag, name]);
   useEffect(() => {
-    setItems([]); setLoadedTag(tag); setPage(0); setPages(1); setSearching(false);
+    sequence.current.video++; sequence.current.post++;
+    busy.current.video = false; busy.current.post = false;
+    setVideos([]); setPosts([]); setLoadedVideoTag(""); setLoadedPostTag("");
+    setVideoPage(0); setPostPage(0); setVideoPages(1); setPostPages(1); setVideoTotal(0); setPostTotal(0);
+    setVideoLoading(true); setPostLoading(true); setVideoErr(""); setPostErr(""); setSearching(false);
     if (scrollContainer.current) scrollContainer.current.scrollTop = 0;
-    void load(1, true);
-    return () => { sequence.current++; busy.current = false; };
+    void load("video", 1, true);
+    void load("post", 1, true);
+    return () => { sequence.current.video++; sequence.current.post++; busy.current.video = false; busy.current.post = false; };
   }, [load, tag]);
   useEffect(() => {
-    const el = sentinel.current;
-    if (!el || filtering || err || loading || page >= pages) return;
+    const el = videoSentinel.current;
+    if (!el || filtering || videoErr || videoLoading || videoPage >= videoPages) return;
     const io = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) void load(page + 1);
+      if (entries[0].isIntersecting) void load("video", videoPage + 1);
     }, { root: scrollContainer.current, rootMargin: "300px" });
     io.observe(el);
     return () => io.disconnect();
-  }, [load, page, pages, err, loading, filtering]);
+  }, [load, videoPage, videoPages, videoErr, videoLoading, filtering]);
+  useEffect(() => {
+    const el = postSentinel.current;
+    if (!el || filtering || postErr || postLoading || postPage >= postPages) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) void load("post", postPage + 1);
+    }, { root: scrollContainer.current, rootMargin: "300px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [load, postPage, postPages, postErr, postLoading, filtering]);
 
   return (
     <div className="ios-page absolute inset-0 bg-bg flex flex-col">
@@ -361,12 +405,12 @@ export function TagPage({ tag, name, onBack, wide }: { tag: string; name: string
           <Button aria-label="返回" onClick={onBack} className="w-10 h-10 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={20} /></Button>
           <div className="flex-1 min-w-0">
             <h1 className="text-[16px] font-bold text-on truncate" title={name}>{name}</h1>
-            <div role="status" className="text-[12px] text-mut">已加载 {visibleItems.length} 部</div>
+            <div role="status" className="text-[12px] text-mut">短剧 {currentVideos ? videoTotal : 0} · 吃瓜 {currentPosts ? postTotal : 0}</div>
           </div>
           <Button onClick={() => setSearching(true)} aria-label="搜索短剧" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></Button>
         </div>
       </div>
-      <div ref={scrollContainer} className="flex-1 scroll-y px-4 pt-3 pb-8" aria-busy={loading || !current}>
+      <div ref={scrollContainer} className="flex-1 scroll-y px-4 pt-3 pb-8" aria-busy={videoLoading || postLoading || !currentVideos || !currentPosts}>
         <Surface className="mb-3 rounded-(--r-md) p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="min-w-0 text-[13px] text-mut">{tagBlocked ? "此标签已加入屏蔽列表" : "不喜欢这类内容？可屏蔽整个标签。"}</p>
@@ -379,18 +423,30 @@ export function TagPage({ tag, name, onBack, wide }: { tag: string; name: string
           {storageError && <p role="alert" className="mt-2 text-[13px] text-danger">{storageError}</p>}
           <Button className="mt-1 min-h-11 px-3 text-[12px] text-primary" onClick={() => push({ kind: "settings", section: "内容偏好" })}>管理屏蔽标签</Button>
         </Surface>
-        {(loading || !current) && !visibleItems.length ? (
-          <div className="flex justify-center py-12"><Loader className="w-8 h-8 spinner" /></div>
-        ) : err && !visibleItems.length ? (
-          <Empty icon={<TagIcon size={26} />} title="加载失败" sub={err} action="重试" onAction={() => void load(1, true)} />
-        ) : visibleItems.length ? (
-          <Masonry videos={visibleItems} scopeKey={tag} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: visibleItems.map(x => x.id), index: visibleItems.findIndex(x => x.id === v.id), title: name })} />
-        ) : <Empty icon={<TagIcon size={26} />} title="该标签下暂无内容" />}
-        <div ref={sentinel} className="h-8" />
-        {err && visibleItems.length > 0 && <div role="status" className="flex flex-wrap items-center justify-center gap-2 text-[12px] text-mut"><span>加载更多失败：{err}</span><Button onClick={() => void load(page + 1)} className="px-3 text-primary">重试</Button></div>}
-        {loading && visibleItems.length > 0 && <div className="flex justify-center py-3"><Loader className="w-6 h-6 spinner" /></div>}
-        {!loading && !err && page < pages && <Button onClick={() => void load(page + 1)} className="my-3 px-4 text-primary">加载更多</Button>}
-        {!loading && visibleItems.length > 0 && page >= pages && <div className="text-center text-[12px] text-dim py-3">— 已经到底啦 —</div>}
+        {videoLoading && !visibleVideos.length && <div className="flex justify-center py-8"><Loader className="w-7 h-7 spinner" /></div>}
+        {videoErr && !visibleVideos.length && <Empty icon={<TagIcon size={26} />} title="短剧加载失败" sub={videoErr} action="重试" onAction={() => void load("video", 1, true)} />}
+        {visibleVideos.length > 0 && <section className="mb-6">
+          <h2 className="mb-3 text-[14px] font-semibold text-on">短剧 <span className="text-[12px] font-normal text-mut">{videoTotal}</span></h2>
+          <Masonry videos={visibleVideos} scopeKey={`tag-video:${tag}`} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: visibleVideos.map(x => x.id), index: visibleVideos.findIndex(x => x.id === v.id), title: name })} />
+        </section>}
+        <div ref={videoSentinel} className="h-2" />
+        {videoErr && visibleVideos.length > 0 && <div role="status" className="flex flex-wrap items-center justify-center gap-2 py-2 text-[12px] text-mut"><span>短剧加载失败：{videoErr}</span><Button onClick={() => void load("video", videoPage + 1)} className="px-3 text-primary">重试</Button></div>}
+        {videoLoading && visibleVideos.length > 0 && <div className="flex justify-center py-3"><Loader className="w-6 h-6 spinner" /></div>}
+        {!videoLoading && !videoErr && videoPage < videoPages && <Button onClick={() => void load("video", videoPage + 1)} className="my-2 px-4 text-primary">加载更多短剧</Button>}
+
+        {postLoading && !visiblePosts.length && <div className="flex justify-center py-8"><Loader className="w-7 h-7 spinner" /></div>}
+        {postErr && !visiblePosts.length && <Empty icon={<TagIcon size={26} />} title="吃瓜帖子加载失败" sub={postErr} action="重试" onAction={() => void load("post", 1, true)} />}
+        {visiblePosts.length > 0 && <section className="mb-6">
+          <h2 className="mb-3 text-[14px] font-semibold text-on">吃瓜 <span className="text-[12px] font-normal text-mut">{postTotal}</span></h2>
+          <FilteredContent items={visiblePosts} scopeKey={`tag-post:${tag}`}>{shownPosts => <div className={`ios-media-grid ${wide ? "is-wide" : ""}`}>
+            {shownPosts.map(post => <MediaCard key={post.id} title={post.title} cover={post.cover} subtitle={post.tags?.slice(0, 2).join(" · ")} onOpen={() => push({ kind: "post", id: post.id })} />)}
+          </div>}</FilteredContent>
+        </section>}
+        <div ref={postSentinel} className="h-2" />
+        {postErr && visiblePosts.length > 0 && <div role="status" className="flex flex-wrap items-center justify-center gap-2 py-2 text-[12px] text-mut"><span>吃瓜加载失败：{postErr}</span><Button onClick={() => void load("post", postPage + 1)} className="px-3 text-primary">重试</Button></div>}
+        {postLoading && visiblePosts.length > 0 && <div className="flex justify-center py-3"><Loader className="w-6 h-6 spinner" /></div>}
+        {!postLoading && !postErr && postPage < postPages && <Button onClick={() => void load("post", postPage + 1)} className="my-2 px-4 text-primary">加载更多吃瓜</Button>}
+        {!videoLoading && !postLoading && !videoErr && !postErr && !visibleVideos.length && !visiblePosts.length && <Empty icon={<TagIcon size={26} />} title="该标签下暂无内容" />}
       </div>
       {searching && <InplaceSearch kind="video" wide={wide} onClose={() => setSearching(false)} onOpenVideo={(v, list) => push({ kind: "feed", videoIds: list.map(x => x.id), index: list.findIndex(x => x.id === v.id), title: name })} />}
     </div>

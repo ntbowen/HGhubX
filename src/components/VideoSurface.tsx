@@ -26,6 +26,7 @@ type Props = {
   poster?: string;
   autoPlay?: boolean;
   active?: boolean;
+  measurementKey?: string;
   diagnosticContext?: Record<string, unknown>;
   muted?: boolean;
   loop?: boolean;
@@ -35,7 +36,7 @@ type Props = {
   rate?: number;
   onTime?: (t: number) => void;
   onDuration?: (d: number) => void;
-  onSize?: (w: number, h: number) => void;
+  onSize?: (w: number, h: number, measurementKey: string) => boolean | void;
   onPlaying?: () => void;
   onPause?: () => void;
   onWaiting?: () => void;
@@ -47,30 +48,44 @@ type Props = {
 
 /** 只负责「播」：hls.js + video 元素，控制条由外层渲染。 */
 const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
-  { src, poster, autoPlay = true, active = true, diagnosticContext = {}, muted = false, loop = false, fit = "contain", volume = 1, rate = 1,
+  { src, poster, autoPlay = true, active = true, measurementKey = src, diagnosticContext = {}, muted = false, loop = false, fit = "contain", volume = 1, rate = 1,
     onTime, onDuration, onSize, onPlaying, onPause, onWaiting, onEnded, onError, onClick, className = "" },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const latestSource = useRef(src); latestSource.current = src;
+  const attachedSource = useRef<string | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const recoveryRef = useRef<HlsRecovery | null>(null);
   const nearEndFiredRef = useRef(false);
-  const reportedSizeRef = useRef({ w: 0, h: 0 });
+  const reportedSizeRef = useRef({ key: "", w: 0, h: 0 });
+  const measurementRef = useRef({ key: measurementKey, onSize });
+  measurementRef.current = { key: measurementKey, onSize };
   const [ready, setReady] = useState(false);
   const { trace, requestSeek } = usePlayerDiagnostics(videoRef, hlsRef, { ...diagnosticContext, active, resource: mediaResource(src) });
   const activity = usePlaybackActivity(videoRef, hlsRef, { active, autoPlay, src, trace });
   const proxyRecovery = useProxyPlaybackRecovery(videoRef, src, activity, trace);
 
   const reportSize = (v: HTMLVideoElement | null) => {
-    if (!v) return;
+    if (!v || v !== videoRef.current || attachedSource.current !== latestSource.current || v.readyState < 1) return;
     const w = v.videoWidth || 0;
     const h = v.videoHeight || 0;
-    if (w > 0 && h > 0 && (w !== reportedSizeRef.current.w || h !== reportedSizeRef.current.h)) {
-      reportedSizeRef.current = { w, h };
-      onSize?.(w, h);
+    const current = measurementRef.current;
+    if (w > 0 && h > 0 && (current.key !== reportedSizeRef.current.key || w !== reportedSizeRef.current.w || h !== reportedSizeRef.current.h)) {
+      // A parent may reject an event during an item transition. Keep it eligible
+      // for the next metadata/resize event instead of losing the size forever.
+      if (current.onSize?.(w, h, current.key) !== false) {
+        reportedSizeRef.current = { key: current.key, w, h };
+      }
     }
   };
+
+  useLayoutEffect(() => {
+    // Re-emit existing metadata when the same source becomes current again.
+    // A newly selected source is ignored until its transport has been attached.
+    reportedSizeRef.current = { key: "", w: 0, h: 0 };
+    reportSize(videoRef.current);
+  }, [measurementKey, src, active]);
 
   useImperativeHandle(ref, () => ({
     el: () => videoRef.current,
@@ -105,8 +120,9 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
+    attachedSource.current = null;
     setReady(false);
-    reportedSizeRef.current = { w: 0, h: 0 };
+    reportedSizeRef.current = { key: "", w: 0, h: 0 };
     nearEndFiredRef.current = false;
     const resume = proxyRecovery.resume();
     const onVideoResize = () => reportSize(video);
@@ -126,6 +142,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
       v.playbackRate = rate;
     };
     applySettings();
+    attachedSource.current = src;
 
     if (source.engine === "hls.js") {
       const hls = new Hls({
@@ -183,6 +200,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(
     }
 
     return () => {
+      attachedSource.current = null;
       disconnectNative?.();
       video.removeEventListener("resize", onVideoResize);
       recoveryRef.current?.dispose(); recoveryRef.current = null;
