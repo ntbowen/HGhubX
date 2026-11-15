@@ -160,7 +160,7 @@ type Store = {
   tab: Tab; setTab: (t: Tab) => void;
   stack: Page[]; push: (p: PageInput) => void; pop: () => void;
   user: User | null; setUser: (u: User | null, origin?: string) => void;
-  accountScope: string; accountSync: { busy: boolean; error: string; lastSynced: number };
+  accountScope: string; accountSync: { busy: boolean; error: string; lastSynced: number; favoritesKnown: boolean };
   syncAccount: () => Promise<void>;
   setCollected: (kind: "video" | "post", id: number, on: boolean) => Promise<void>;
   setLiked: (kind: "video" | "post", id: number, ep: number, on: boolean) => Promise<void>;

@@ -1,6 +1,7 @@
 mod api;
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod apple_proxy;
+mod cache;
 mod env;
 #[cfg(target_os = "ios")]
 mod ios_layout;

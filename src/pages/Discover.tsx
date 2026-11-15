@@ -2,7 +2,7 @@ import { Button, Surface } from "../components/ios/controls";
 import { Loader } from "../components/ios/effects";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, fmt } from "../api";
-import type { VideoCard } from "../types";
+import type { TopicCard, TopicDetail, VideoCard } from "../types";
 import { useStore } from "../store";
 import { MAX_BLOCKED_TAGS, MAX_TAG_LENGTH, useContentPreferences } from "../contentPreferences";
 import { Masonry } from "../components/cards";
@@ -110,12 +110,78 @@ export function TopicPage({ slug, name, onBack, wide }: { slug: string; name: st
   const [searching, setSearching] = useState(false);
   const [introExpanded, setIntroExpanded] = useState(false);
   const introId = useId();
-  // The topic endpoint returns the complete list; it has no page parameter.
-  const { data, loading, err, load } = useDiscoveryData(slug, () => api.topic(slug));
-  const topic = data?.topic;
-  const related = data?.related ?? [];
-  const videos = data?.videos?.items ?? [];
-  useEffect(() => { setIntroExpanded(false); setSearching(false); }, [slug]);
+  const [state, setState] = useState<{
+    topic: TopicDetail["topic"] | null;
+    related: TopicCard[];
+    videos: VideoCard[];
+    page: number;
+    pages: number;
+    total: number;
+    loading: boolean;
+    loadingMore: boolean;
+    error: string;
+  }>({ topic: null, related: [], videos: [], page: 0, pages: 1, total: 0, loading: true, loadingMore: false, error: "" });
+  const sequence = useRef(0);
+  const busy = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const load = useCallback(async (page = 1, reset = false) => {
+    if (busy.current) return;
+    busy.current = true;
+    const token = reset ? ++sequence.current : sequence.current;
+    setState(previous => reset
+      ? { ...previous, topic: null, related: [], videos: [], page: 0, pages: 1, total: 0, loading: true, loadingMore: false, error: "" }
+      : { ...previous, loading: false, loadingMore: true, error: "" });
+    try {
+      const data = await api.topic(slug, page, 20);
+      if (token !== sequence.current) return;
+      const incoming = data?.videos?.items ?? [];
+      setState(previous => {
+        const seen = new Set(reset ? [] : previous.videos.map(video => video.id));
+        const videos = [...(reset ? [] : previous.videos), ...incoming.filter(video => !seen.has(video.id))];
+        return {
+          topic: data?.topic ?? previous.topic,
+          related: data?.related ?? previous.related,
+          videos,
+          page: data?.videos?.pagination?.page ?? page,
+          pages: Math.max(1, data?.videos?.pagination?.pages ?? page),
+          total: Math.max(videos.length, data?.videos?.pagination?.total ?? videos.length),
+          loading: false,
+          loadingMore: false,
+          error: "",
+        };
+      });
+    } catch (error) {
+      if (token === sequence.current) {
+        setState(previous => ({
+          ...previous,
+          loading: false,
+          loadingMore: false,
+          error: error instanceof Error ? error.message : "加载失败，请重试",
+        }));
+      }
+    } finally {
+      if (token === sequence.current) busy.current = false;
+    }
+  }, [slug]);
+
+  const loadMore = () => {
+    const current = stateRef.current;
+    if (current.loading || current.loadingMore || current.page >= current.pages) return;
+    void load(current.page + 1);
+  };
+
+  useEffect(() => {
+    busy.current = false;
+    setIntroExpanded(false);
+    setSearching(false);
+    void load(1, true);
+    return () => { sequence.current++; busy.current = false; };
+  }, [load]);
+
+  const { topic, related, videos, page, pages, total, loading, loadingMore, error } = state;
+  const hasMore = page < pages;
 
   return (
     <div className="ios-page absolute inset-0 bg-bg flex flex-col">
@@ -124,7 +190,7 @@ export function TopicPage({ slug, name, onBack, wide }: { slug: string; name: st
           <Button aria-label="返回" onClick={onBack} className="w-10 h-10 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={20} /></Button>
           <div className="flex-1 min-w-0">
             <h1 className="text-[16px] font-bold text-on truncate" title={topic?.title || name}>{topic?.title || name}</h1>
-            <div className="text-[12px] text-mut">{loading ? "加载中…" : `已展示 ${videos.length} 部`}</div>
+            <div className="text-[12px] text-mut">{loading ? "加载中…" : `已加载 ${videos.length} / ${total} 部`}</div>
           </div>
           <Button onClick={() => setSearching(true)} aria-label="搜索短剧" className="ml-auto w-9 h-9 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><ISearch size={19} /></Button>
         </div>
@@ -156,14 +222,22 @@ export function TopicPage({ slug, name, onBack, wide }: { slug: string; name: st
 
         {loading && !videos.length ? (
           <div className="flex justify-center py-12"><Loader className="w-8 h-8 spinner" /></div>
-        ) : err && !videos.length ? (
-          <Empty icon={<TopicIcon size={26} />} title="加载失败" sub={err} action="重试" onAction={load} />
+        ) : error && !videos.length ? (
+          <Empty icon={<TopicIcon size={26} />} title="加载失败" sub={error} action="重试" onAction={() => void load(1, true)} />
         ) : videos.length ? (
           <Masonry videos={videos} scopeKey={slug} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: videos.map((x) => x.id), index: videos.findIndex((x) => x.id === v.id), title: topic?.title || name })} />
         ) : (
           <Empty icon={<TopicIcon size={26} />} title="暂无内容" />
         )}
-        {loading && videos.length > 0 && <div className="flex justify-center py-3"><Loader className="w-6 h-6 spinner" /></div>}
+        {error && videos.length > 0 && <div role="alert" className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[13px] text-danger">
+          <span className="min-w-0 break-words">加载更多失败：{error}</span>
+          <Button disabled={loadingMore} onClick={loadMore} className="px-3 text-primary">重试</Button>
+        </div>}
+        {loadingMore && <div className="flex justify-center py-3"><Loader label="正在加载更多专题影片" className="w-6 h-6" /></div>}
+        {!loading && !loadingMore && hasMore && <Button onClick={loadMore} className="mt-3 w-full rounded-(--r-ctl) bg-s3 py-2.5 text-[13px] text-on pressable">
+          加载更多（{videos.length}/{total}）
+        </Button>}
+        {!loading && !loadingMore && !hasMore && videos.length > 0 && <div className="py-3 text-center text-[12px] text-dim">已加载全部 {total} 部</div>}
         {wide && <div className="h-2" />}
       </div>
       {searching && <InplaceSearch kind="video" wide={wide} onClose={() => setSearching(false)} onOpenVideo={(v, list) => push({ kind: "feed", videoIds: list.map((x) => x.id), index: list.findIndex((x) => x.id === v.id), title: topic?.title || name })} />}

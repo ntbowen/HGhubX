@@ -22,7 +22,7 @@ type AccountData = GuestData & {
   dirtyHistory: Record<number, { ep: number; at: number }>;
   localHistory: number[];
 };
-type SyncState = { busy: boolean; error: string; lastSynced: number };
+type SyncState = { busy: boolean; error: string; lastSynced: number; favoritesKnown: boolean };
 const ACCOUNT_KEY = "hghubx_accounts_v1";
 const empty = (): AccountData => ({ likes: [], favs: [], follows: [], history: [], postLikes: [], postFavs: [], dirtyHistory: {}, localHistory: [] });
 const ids = (value: unknown): number[] => Array.isArray(value)
@@ -69,7 +69,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
         accounts.current = Object.fromEntries(Object.entries(saved.accounts).map(([key, data]) => [key, sanitize(data as AccountData)]));
       }
     } catch { /* A damaged account cache must not erase legacy guest records. */ }
-    state.current = { user: null, origin: "", key: "guest", generation: 0, data: guest.current, sync: { busy: false, error: "", lastSynced: 0 } };
+    state.current = { user: null, origin: "", key: "guest", generation: 0, data: guest.current, sync: { busy: false, error: "", lastSynced: 0, favoritesKnown: false } };
   }
   const pending = useRef(new Map<string, Promise<void>>());
   const mutation = useRef(0);
@@ -171,6 +171,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
       ]);
       if (!isCurrent(generation)) return;
       let current = state.current!.data;
+      let favoritesKnown = state.current!.sync.favoritesKnown;
       const errors: string[] = [];
       if (profile.status === "fulfilled") {
         const snapshot = profile.value;
@@ -178,6 +179,8 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
         else if (mutation.current === startMutation && pending.current.size === 0) {
           state.current!.user = snapshot.user;
           current = applyInteractions(current, snapshot.interactions);
+          if (Array.isArray(snapshot.interactions?.favorite_video_ids)) favoritesKnown = true;
+          else if (!favoritesKnown) errors.push("账号未返回收藏数据，请重试");
         } else if (pending.current.size === 0) needsResync.current = true;
       } else errors.push(message(profile.reason));
       if (remote.status === "fulfilled" && clearVersion.current === startClear) {
@@ -199,7 +202,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
       } else if (remote.status === "rejected") errors.push(message(remote.reason));
       persist(current);
       if (storageError.current) errors.push(storageError.current);
-      state.current!.sync = { busy: false, error: errors.join("；"), lastSynced: errors.length ? s.sync.lastSynced : Date.now() };
+      state.current!.sync = { busy: false, error: errors.join("；"), lastSynced: errors.length ? s.sync.lastSynced : Date.now(), favoritesKnown };
       render();
       if (errors.length) throw new Error(errors.join("；"));
     })();
@@ -224,7 +227,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     s.generation++; mutation.current++; historyMutation.current++;
     s.user = next; s.origin = nextOrigin; s.key = key;
     s.data = next ? accounts.current[key] || applyInteractions(empty(), next.interactions) : guest.current;
-    s.sync = { busy: false, error: "", lastSynced: 0 };
+    s.sync = { busy: false, error: "", lastSynced: 0, favoritesKnown: false };
     sentHistory.current.clear(); pending.current.clear(); needsResync.current = false; storageError.current = "";
     render();
     if (next) void syncRef.current().catch(() => {});

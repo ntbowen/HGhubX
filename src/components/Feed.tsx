@@ -1179,7 +1179,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   onEnded={() => { if (!isCurrentPlayback()) return; const next = episodes.find((e) => e.ep_num === curEp + 1); if (next) pickEp(next.ep_num); }}
                   onError={(m) => {
                     if (!isCurrentPlayback()) return;
-                    setErr(m);
+                    setErr(m); setWaiting(false);
                     if (preferHevc && hevcUrl) {
                       setPreferHevc(false);
                       toast("高清播不了，已切回标准", "info");
@@ -1478,7 +1478,11 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   <div className="rounded-xl p-5 flex flex-col items-center gap-3 text-[14px] hg-ink-2 pointer-events-auto" style={{ background: "rgba(0,0,0,.7)" }}>
                     <span>视频暂时无法加载</span>
                     <span className="text-[12px] hg-ink-4 max-w-[240px] text-center break-all">{err}</span>
-                    <Button className="hg-link text-[14px]" onClick={() => { setErr(""); setWaiting(true); videoRef.current?.play(); }}>重试</Button>
+                    <Button className="hg-link text-[14px]" onClick={() => {
+                      setErr(""); setWaiting(true);
+                      if (playUrl && videoRef.current) videoRef.current.retry();
+                      else setProxyRetry(value => value + 1);
+                    }}>重试</Button>
                   </div>
                 </div>
               )}
