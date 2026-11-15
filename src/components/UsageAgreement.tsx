@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { platform } from "../api";
 import { acceptUsageAgreement, USAGE_AGREEMENT_VERSION } from "../usageAgreement";
@@ -19,15 +19,31 @@ export function UsageAgreementText() {
 export default function UsageAgreement({ onAccept }: { onAccept: () => void }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ y: number; top: number } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [declined, setDeclined] = useState(false);
   const [error, setError] = useState("");
   const [exiting, setExiting] = useState(false);
 
-  useEffect(() => { titleRef.current?.focus({ preventScroll: true }); }, [declined]);
+  // 电视/横屏没有滚轮滚动条：找出真正可滚动的元素（矮屏模式下是整张卡片）
+  const getScroller = () => {
+    const inner = scrollRef.current;
+    if (inner && inner.scrollHeight > inner.clientHeight + 1) return inner;
+    const card = panelRef.current;
+    return card && card.scrollHeight > card.clientHeight + 1 ? card : inner;
+  };
+
   useEffect(() => {
+    const step: Record<string, number> = { ArrowDown: 56, ArrowUp: -56, PageDown: 320, PageUp: -320 };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); setDeclined(true); }
+      // 遥控器方向键/PageUp/PageDown 直接滚动协议区，无需先聚焦
+      if (event.key in step) {
+        const el = getScroller();
+        if (el) { event.preventDefault(); event.stopImmediatePropagation(); el.scrollBy({ top: step[event.key] }); }
+        return;
+      }
       if (event.key !== "Tab") return;
       const controls = [...(panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? [])];
       const first = controls[0], last = controls[controls.length - 1];
@@ -52,6 +68,23 @@ export default function UsageAgreement({ onAccept }: { onAccept: () => void }) {
     return () => { disposed = true; void listener?.unregister().catch(() => {}); };
   }, []);
 
+  // 鼠标/触控按住拖动滚动；交互元素上不触发，避免抢按钮点击
+  const onDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("button,input,label,a,[contenteditable]")) return;
+    const el = getScroller();
+    if (!el) return;
+    dragRef.current = { y: event.clientY, top: el.scrollTop };
+    document.body.style.userSelect = "none";
+    el.setPointerCapture?.(event.pointerId);
+  };
+  const onDragMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const el = getScroller();
+    if (drag && el) el.scrollTop = drag.top - (event.clientY - drag.y);
+  };
+  const onDragEnd = () => { dragRef.current = null; document.body.style.userSelect = ""; };
+
   const accept = () => {
     if (!confirmed) return;
     setError("");
@@ -69,13 +102,13 @@ export default function UsageAgreement({ onAccept }: { onAccept: () => void }) {
   };
 
   return <div className="hg-agreement" role="dialog" aria-modal="true" aria-labelledby="hg-agreement-title" aria-describedby="hg-agreement-summary">
-    <div ref={panelRef} className="hg-agreement-card">
+    <div ref={panelRef} className="hg-agreement-card" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onPointerLeave={onDragEnd}>
       <header className="hg-agreement-header">
         <div className="hg-agreement-kicker">HGhubX · 使用前确认</div>
         <h1 ref={titleRef} tabIndex={-1} id="hg-agreement-title">{declined ? "应用尚未启动" : "使用条款与免责声明"}</h1>
         <p id="hg-agreement-summary" className="hg-agreement-summary">{declined ? "你尚未同意协议，主界面与内容不会加载。你可以关闭应用，或返回重新阅读。" : "请阅读以下条款，特别是地区限制。同意记录仅保存在本设备，条款更新后需重新确认。"}</p>
       </header>
-      {!declined && <div className="hg-agreement-scroll" tabIndex={0} aria-label="协议正文">
+      {!declined && <div ref={scrollRef} className="hg-agreement-scroll" tabIndex={0} aria-label="协议正文">
         <UsageAgreementText />
       </div>}
       <footer className="hg-agreement-footer">

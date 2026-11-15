@@ -33,6 +33,10 @@
   .hg-agreement-footer { padding:12px 16px 10px; }
   .hg-agreement-actions button { padding-inline:10px; font-size:13px; }
 }
+/* 横屏（电视/车机）下加宽卡片，避免条款区被压成竖条 */
+@media (orientation:landscape) and (max-height:800px) {
+  .hg-agreement-card { width:min(100%, 920px); }
+}
 @media(max-height:560px) {
   .hg-agreement-card { display:block; overflow-y:auto; overscroll-behavior:contain; }
   .hg-agreement-scroll { overflow:visible; }
