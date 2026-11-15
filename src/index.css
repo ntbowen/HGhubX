@@ -500,3 +500,7 @@ html.theme-light .article-body blockquote { background: rgba(43, 40, 36, .045); 
 
 
 }
+
+/* Chrome<87 兼容：Tailwind inset-0 的 inset 简写不被支持，降级为长手。
+   非分层规则优先级高于 @layer utilities，现代浏览器下值相同无副作用。 */
+.inset-0{top:0;right:0;bottom:0;left:0}
