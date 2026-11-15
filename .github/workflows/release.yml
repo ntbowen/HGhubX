@@ -247,8 +247,8 @@ jobs:
 
       - name: 编译 APK（按 ABI 分包）
         run: |
-          # quick / android-arm64 只出 arm64：真机验证用不到 v7a 和 x86_64，省三分之二时间
-          if [ "${{ inputs.quick }}" = "true" ] || [ "${{ inputs.platforms }}" = "android-arm64" ]; then
+          # 只有显式选 android-arm64 才只出 arm64；quick 只影响编译优化档位，不砍 ABI
+          if [ "${{ inputs.platforms }}" = "android-arm64" ]; then
             TARGETS="aarch64"
           else
             TARGETS="aarch64 armv7 x86_64"
