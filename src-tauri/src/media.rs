@@ -519,7 +519,7 @@ fn respond(status: u16, ctype: &str, body: Vec<u8>, cache: &str) -> Response<Vec
     Response::builder()
         .status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK))
         .header("Content-Type", ctype)
-        // 范围处理在清单改写/解密后统一应用，长度以最终响应字节为准。
+        // 长度以最终响应字节为准；播放列表始终完整返回，媒体分片支持 Range。
         .header("Content-Length", len)
         .header("Access-Control-Expose-Headers", "Content-Length, Content-Type, Accept-Ranges, Content-Range")
         .header("X-Content-Type-Options", "nosniff")
@@ -533,6 +533,14 @@ fn apply_byte_range(mut response: Response<Vec<u8>>, range: Option<&str>) -> Res
     use tauri::http::HeaderValue;
 
     if response.status() != StatusCode::OK {
+        return response;
+    }
+    // A native HLS loader may send a byte probe for a playlist. Returning only
+    // its first bytes hides #EXTM3U and nested URLs, so both /hls and playlists
+    // discovered through /seg must remain complete 200 responses.
+    if response.headers().get("Content-Type").and_then(|v| v.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("mpegurl"))
+    {
         return response;
     }
     response.headers_mut().insert("Accept-Ranges", HeaderValue::from_static("bytes"));
@@ -677,6 +685,19 @@ pub async fn handle(path: &str, query: &str, origin: &str, range: Option<&str>) 
         serde_json::json!({"route": route, "resource": crate::playback_log::resource_id(&target), "status": response.status().as_u16(), "bytes": response.body().len(), "content_type": response.headers().get("Content-Type").and_then(|v| v.to_str().ok()), "content_range": response.headers().get("Content-Range").and_then(|v| v.to_str().ok()), "elapsed_ms": started.elapsed().as_millis() as u64}),
     );
     response
+}
+
+/// Socket tests supply bytes without contacting an upstream. They use the same
+/// playlist rewrite, MIME detection and range implementation as real requests.
+#[cfg(test)]
+pub(crate) fn fixture_response(
+    target: &str,
+    ctype: &str,
+    bytes: &[u8],
+    origin: &str,
+    range: Option<&str>,
+) -> Response<Vec<u8>> {
+    apply_byte_range(segment_response(target, Some(ctype), bytes.to_vec(), origin), range)
 }
 
 #[cfg(test)]
@@ -841,8 +862,8 @@ mod tests {
     }
 
     #[test]
-    fn native_range_probe_returns_only_requested_playlist_bytes() {
-        let body = b"#EXTM3U\n#EXTINF:4,\nsegment.ts\n";
+    fn native_range_probe_returns_only_requested_segment_bytes() {
+        let body = b"0123456789abcdef";
         for (range, start, end) in [
             ("bytes=0-1", 0, 1),
             ("bytes=0-7", 0, 7),
@@ -851,14 +872,30 @@ mod tests {
             ("bytes=0-999", 0, body.len() - 1),
         ] {
             let response = apply_byte_range(
-                respond(200, "application/vnd.apple.mpegurl", body.to_vec(), "no-store"),
+                respond(200, "video/mp2t", body.to_vec(), "no-store"),
                 Some(range),
             );
             assert_eq!(response.status(), 206, "{range}");
             assert_eq!(response.body().as_slice(), &body[start..=end]);
-            assert_eq!(response.headers()["Content-Type"], "application/vnd.apple.mpegurl");
+            assert_eq!(response.headers()["Content-Type"], "video/mp2t");
             assert_eq!(response.headers()["Content-Length"], (end - start + 1).to_string());
             assert_eq!(response.headers()["Content-Range"], format!("bytes {start}-{end}/{}", body.len()));
+        }
+    }
+
+    #[test]
+    fn native_range_probes_keep_playlists_complete() {
+        let body = b"#EXTM3U\n#EXTINF:4,\nsegment.ts\n";
+        for range in ["bytes=0-1", "bytes=99999-", "bytes=-4"] {
+            let response = apply_byte_range(
+                respond(200, "application/vnd.apple.mpegurl", body.to_vec(), "no-store"),
+                Some(range),
+            );
+            assert_eq!(response.status(), 200);
+            assert_eq!(response.body(), body);
+            assert_eq!(response.headers()["Content-Length"], body.len().to_string());
+            assert!(!response.headers().contains_key("Content-Range"));
+            assert!(!response.headers().contains_key("Accept-Ranges"));
         }
     }
 
