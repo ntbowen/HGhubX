@@ -201,17 +201,6 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 .win-page-in { animation: kf-page-in .26s cubic-bezier(.2,0,0,1) both; }
 .win-page-out { animation: kf-page-out .2s ease-in both; }
 
-/* 桌面端首页悬浮分段控件 */
-.desktop-home-tabs {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 2px; padding: 3px; background: rgba(0,0,0,.42);
-  border-radius: var(--r-ctl); backdrop-filter: blur(18px); z-index: 25;
-}
-.desktop-home-tabs button {
-  border: 0; background: transparent; color: rgba(255,255,255,.62);
-  font-size: 13px; font-weight: 600; padding: 7px 18px; border-radius: var(--r-ctl);
-}
-.desktop-home-tabs button[aria-selected="true"] { background: rgba(255,255,255,.16); color: #fff; }
 
 /* ——— 无边框窗口边缘缩放热区 ——— */
 .win-resize { position: absolute; z-index: 60; }
@@ -297,6 +286,16 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
   padding: 0 22px 10px; color: #bcc3cd;
   background: transparent;
   transition: opacity .25s;
+}
+/* 播放器按钮快捷键提示（data-tooltip 此前无样式，从不显示） */
+@media (hover:hover) and (pointer:fine) {
+  [data-tooltip] { position: relative; }
+  [data-tooltip]:hover::after, [data-tooltip]:focus-visible::after {
+    content: attr(data-tooltip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    padding: 4px 8px; border-radius: 6px; background: rgba(21,24,29,.95); color: #e8ecf2;
+    font-size: 11px; line-height: 1.2; white-space: nowrap; pointer-events: none; z-index: 60;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
 }
 /* Keep controls legible without laying a dark panel over the video. */
 .desktop-controls, .player-inline-controls { text-shadow: 0 1px 3px rgba(0,0,0,.8); }

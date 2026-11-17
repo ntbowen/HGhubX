@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+/// Credential trust for session rebase: fixed line or a mirror confirmed by a
+/// trusted publish page in this process. Custom lines are deliberately NOT
+/// trusted here — an explicitly saved custom origin may carry its own login,
+/// but a token must never follow a switch to or from it.
+pub fn rebase_trust(origin: &str) -> bool {
+    crate::lines::is_fixed(origin) || crate::lines::is_trusted_mirror(origin)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Session {
     // 旧版本没有 origin：不能推断其 token 属于哪个镜像，升级后必须重新登录。
@@ -88,6 +96,115 @@ mod tests {
         assert!(!store.set_if_revision(revision, origin, "late".into(), json!({"id": 1})));
         assert_eq!(store.user(origin)["id"], 2);
     }
+
+    // Trusted rebase tests parameterize the trust predicate (like the real
+    // callers inject `lines::is_fixed || lines::is_trusted_mirror`), so they do
+    // not depend on which fixed lines exist or on the process-global mirror set.
+    fn trusted_pair(origin: &str) -> bool {
+        matches!(origin, "https://huangguoai.com" | "https://mirror-a.example")
+    }
+
+    #[test]
+    fn trusted_rebase_moves_session_and_bumps_revision() {
+        let store = SessionStore::new();
+        let old_origin = "https://huangguoai.com";
+        let new_origin = "https://mirror-a.example";
+        store.set(old_origin, "secret-token".into(), json!({"id": 1}));
+        let before = store.snapshot(old_origin).unwrap();
+        assert!(store.rebase_if_trusted(new_origin, trusted_pair));
+        assert_eq!(store.token(new_origin).as_deref(), Some("secret-token"));
+        assert_eq!(store.user(new_origin)["id"], 1);
+        // The old origin no longer resolves credentials.
+        assert_eq!(store.token(old_origin), None);
+        assert!(store.user(old_origin).is_null());
+        // Same set_if_revision semantics: pre-switch snapshots are stale.
+        assert_eq!(store.revision(), before.revision.wrapping_add(1));
+        assert!(!store.is_current(&before));
+        assert!(!store.update_user_if_current(&before, json!({"id": 1, "nickname": "late"})));
+        assert!(!store.clear_if_current(&before));
+        assert_eq!(store.stored_origin().as_deref(), Some(new_origin));
+    }
+
+    #[test]
+    fn trusted_rebase_persists_the_new_origin() {
+        let dir = std::env::temp_dir().join(format!(
+            "hghubx-session-rebase-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = SessionStore::new();
+        store.bind(dir.clone());
+        store.set("https://huangguoai.com", "secret-token".into(), json!({"id": 1}));
+        assert!(store.rebase_if_trusted("https://mirror-a.example", trusted_pair));
+        let on_disk: Session =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("session.json")).unwrap())
+                .unwrap();
+        assert_eq!(on_disk.origin, "https://mirror-a.example");
+        assert_eq!(on_disk.token, "secret-token");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rebase_refuses_untrusted_endpoints_in_both_directions() {
+        for (old_origin, new_origin) in [
+            // Trusted -> custom/untrusted must not hand the token over.
+            ("https://huangguoai.com", "https://custom.example"),
+            // Custom/untrusted -> trusted must not smuggle credentials in either.
+            ("https://custom.example", "https://huangguoai.com"),
+            // Unknown mirror -> trusted mirror.
+            ("https://unpublished.example", "https://mirror-a.example"),
+        ] {
+            let store = SessionStore::new();
+            store.set(old_origin, "secret-token".into(), json!({"id": 1}));
+            let before = store.snapshot(old_origin).unwrap();
+            assert!(!store.rebase_if_trusted(new_origin, trusted_pair), "{old_origin} -> {new_origin}");
+            // Session untouched: same origin, token, identity epoch.
+            assert_eq!(store.token(old_origin).as_deref(), Some("secret-token"));
+            assert_eq!(store.token(new_origin), None);
+            assert!(store.is_current(&before));
+            assert_eq!(store.revision(), before.revision);
+        }
+    }
+
+    #[test]
+    fn rebase_on_empty_session_is_a_noop() {
+        let store = SessionStore::new();
+        assert_eq!(store.stored_origin(), None);
+        let revision = store.revision();
+        assert!(!store.rebase_if_trusted("https://mirror-a.example", trusted_pair));
+        assert_eq!(store.revision(), revision);
+        // Legacy sessions without origin stay unassigned and cannot be rebased.
+        *store.current.lock().unwrap() =
+            serde_json::from_str(r#"{"token":"legacy","user":{"id":1}}"#).unwrap();
+        assert_eq!(store.stored_origin(), None);
+        assert!(!store.rebase_if_trusted("https://huangguoai.com", trusted_pair));
+        assert_eq!(store.token("https://huangguoai.com"), None);
+    }
+
+    #[test]
+    fn rebase_to_the_same_origin_keeps_the_revision() {
+        let store = SessionStore::new();
+        let origin = "https://huangguoai.com";
+        store.set(origin, "secret-token".into(), json!({"id": 1}));
+        let before = store.snapshot(origin).unwrap();
+        assert!(store.rebase_if_trusted(origin, trusted_pair));
+        assert!(store.is_current(&before));
+        assert_eq!(store.revision(), before.revision);
+    }
+
+    #[test]
+    fn rebase_or_clear_keeps_trusted_and_drops_untrusted() {
+        let store = SessionStore::new();
+        store.set("https://huangguoai.com", "secret-token".into(), json!({"id": 1}));
+        store.rebase_or_clear("https://mirror-a.example", trusted_pair);
+        assert_eq!(store.token("https://mirror-a.example").as_deref(), Some("secret-token"));
+        // Untrusted target: the session is dropped, never handed over.
+        store.rebase_or_clear("https://custom.example", trusted_pair);
+        assert_eq!(store.token("https://mirror-a.example"), None);
+        assert_eq!(store.token("https://custom.example"), None);
+        assert!(store.stored_origin().is_none());
+    }
 }
 
 pub struct SessionStore {
@@ -131,6 +248,71 @@ impl SessionStore {
     pub fn snapshot(&self, origin: &str) -> Option<Session> {
         let cur = self.current.lock().unwrap();
         (cur.origin == origin && !cur.token.is_empty()).then(|| cur.clone())
+    }
+
+    /// Origin of the stored session (if any), regardless of the current line.
+    /// Boot uses this to decide whether a trusted rebase is worth attempting;
+    /// it never exposes the token itself.
+    pub fn stored_origin(&self) -> Option<String> {
+        let cur = self.current.lock().unwrap();
+        (!cur.token.is_empty() && !cur.origin.is_empty()).then(|| cur.origin.clone())
+    }
+
+    /// Trusted-line switch: the upstream lines share one account system, so a
+    /// login may follow a switch when BOTH the old and the new origin are
+    /// credential-trusted (fixed line, or a mirror confirmed by a trusted
+    /// publish page in this process). The trust predicate is injected by the
+    /// caller so this module stays independent of `crate::lines`.
+    ///
+    /// Returns true when the session is usable on `new_origin` afterwards
+    /// (rebased, or already bound there); false means "not moved" and manual
+    /// callers must fall back to `clear()`. A successful rebase bumps the
+    /// revision with `set_if_revision` semantics so old in-flight work cannot
+    /// write back, and persists the new origin.
+    pub fn rebase_if_trusted(&self, new_origin: &str, trusted: impl Fn(&str) -> bool) -> bool {
+        {
+            let mut cur = self.current.lock().unwrap();
+            if cur.token.is_empty() || cur.origin.is_empty() {
+                return false;
+            }
+            if cur.origin == new_origin {
+                return true;
+            }
+            if !trusted(&cur.origin) || !trusted(new_origin) {
+                return false;
+            }
+            cur.origin = new_origin.to_string();
+            cur.revision = cur.revision.wrapping_add(1);
+        }
+        self.persist();
+        true
+    }
+
+    /// Line-switch policy in one place: keep the login only when the trusted
+    /// rebase succeeds, otherwise drop it (custom/untrusted endpoints never
+    /// receive the old token). Callers pass the credential-trust predicate.
+    pub fn rebase_or_clear(&self, new_origin: &str, trusted: impl Fn(&str) -> bool) {
+        if !self.rebase_if_trusted(new_origin, trusted) {
+            self.clear();
+        }
+    }
+
+    /// Boot-time reconciliation under strict security: a session persisted on
+    /// a previous line may follow a trusted switch recorded in line.json before
+    /// this process started. Verify the CURRENT origin first (publisher refresh
+    /// fills the trusted-mirror set), then rebase only when both ends are
+    /// credential-trusted; otherwise the session stays on its old origin and
+    /// boot reports logged-out for the current line (fail closed). A session
+    /// already bound to an unverified current origin only gets the original
+    /// publisher refresh, never a move.
+    pub async fn reconcile_on_boot(&self, origin: &str) {
+        let stored = self.stored_origin();
+        if self.token(origin).is_none() && stored.as_deref().is_some_and(|old| old != origin) {
+            let _ = crate::lines::verify_published_origin(origin).await;
+            let _ = self.rebase_if_trusted(origin, rebase_trust);
+        } else if self.token(origin).is_some() && !crate::net::trusted_auth_origin(origin) {
+            let _ = crate::lines::verify_published_origin(origin).await;
+        }
     }
 
     pub fn revision(&self) -> u64 {

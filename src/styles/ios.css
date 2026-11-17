@@ -97,7 +97,8 @@ html.theme-light {
 .ios-poster-badge { position:absolute; top:9px; left:9px; max-width:calc(100% - 18px); padding:5px 8px; background:rgb(20 20 25 / .74); color:#fff; border:1px solid rgb(255 255 255 / .22); border-radius:999px; font-size:12px; line-height:1.25;  }
 .ios-poster-progress { position:absolute; inset:auto 0 0; display:flex; align-items:center; gap:4px; padding:24px 12px 11px; background:linear-gradient(transparent,rgb(0 0 0 / .8)); color:#fff; font-size:12px; }
 .ios-poster-play { position:absolute; left:calc(50% - 25px); top:calc(50% - 25px); display:grid; place-items:center; width:50px; height:50px; border-radius:50%; color:#fff; background:rgb(20 20 25 / .6); border:1px solid rgb(255 255 255 / .35);  opacity:0; transition:opacity .16s; }
-.ios-poster:hover .ios-poster-play,.ios-poster:focus-visible .ios-poster-play { opacity:1; }
+.ios-poster:focus-visible .ios-poster-play { opacity:1; }
+@media(hover:hover) { .ios-poster:hover .ios-poster-play { opacity:1; } }
 .ios-poster:active .ios-poster-art { opacity:.8; }
 .ios-poster-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-top:10px; color:var(--p-on); font-size:15px; line-height:1.4; font-weight:600; letter-spacing:-.2px; }
 .ios-poster-subtitle { color:var(--p-mut); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; line-height:1.5; margin-top:4px; }
@@ -171,9 +172,6 @@ html.theme-light {
 .win-account-copy small { font-size:12px; }
 .win-sidebar-version { font-size:11px; line-height:1.6; }
 :is(.plat-windows,.plat-linux,.plat-macos) .win-main { border-radius:24px; box-shadow:0 2px 10px rgb(0 0 0 / .025); }
-.desktop-home-tabs { border-radius:999px; padding:4px; background:rgb(40 40 44 / .66); border:1px solid rgb(255 255 255 / .2); backdrop-filter:blur(28px) saturate(150%); -webkit-backdrop-filter:blur(28px) saturate(150%); }
-.desktop-home-tabs button { min-height:38px; border-radius:999px; color:#e0e0e5; }
-.desktop-home-tabs button[aria-selected=true] { background:rgb(255 255 255 / .18); }
 .desktop-context-header>.ios-button { width:44px; height:44px; background:rgb(50 50 55 / .55); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgb(255 255 255 / .16); }
 .desktop-control-row { min-height:44px; height:auto; gap:6px; }
 .player-control.ios-button { min-height:36px; min-width:36px; border-radius:999px; }
@@ -444,15 +442,13 @@ html.theme-light {
 .ios-collection-links { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; }
 .ios-collection-links>.ios-collection-link { min-width:0; min-height:78px; }
 .ios-collection-links .ios-collection-copy { min-width:0; overflow-wrap:anywhere; }
-/* Narrow category shortcuts give the subtitle a full row instead of squeezing
-   it between the icon and arrow. Large text can still reflow without clipping. */
+/* Narrow category shortcuts reflow icon/title/chevron onto one row. */
 @container (max-width:559px) {
   .ios-category-links>.ios-collection-link { display:grid; grid-template-columns:36px minmax(0,1fr) 14px; column-gap:8px; row-gap:8px; align-content:start; }
   .ios-category-links .ios-collection-copy { display:contents; }
   .ios-category-links .ios-collection-icon { grid-column:1; grid-row:1; }
   .ios-category-links .ios-collection-title { grid-column:2; grid-row:1; min-width:0; }
   .ios-category-links .ios-collection-chevron { grid-column:3; grid-row:1; }
-  .ios-category-links .ios-collection-subtitle { grid-column:1 / -1; grid-row:2; min-width:0; margin-top:0; line-height:1.5; overflow-wrap:anywhere; }
 }
 .ios-page-body { scrollbar-gutter:stable; }
 /* Settings uses one width from its persistent back action through all groups.
@@ -475,7 +471,6 @@ html.theme-light {
 .ios-settings-section .ios-settings-trigger.ios-button:not(:disabled):active { scale:1; background:var(--p-hover); }
 .ios-settings-heading { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; }
 .ios-settings-title { font-size:16px; line-height:1.5; font-weight:700; overflow-wrap:anywhere; }
-.ios-settings-summary { font-size:12px; line-height:1.5; font-weight:400; color:var(--p-mut); overflow-wrap:anywhere; }
 .ios-settings-chevron { flex:none; transition:transform .24s var(--motion-spring-soft); }
 .ios-settings-trigger[aria-expanded=true] .ios-settings-chevron { transform:rotate(90deg); }
 .ios-settings-panel[hidden] { display:none; }

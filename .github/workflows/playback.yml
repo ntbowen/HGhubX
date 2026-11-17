@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: Comma-separated checks (seek,legacy,stall,lifecycle,mms)
-        default: seek,legacy,stall,lifecycle,mms
+        description: Comma-separated checks (seek,legacy,lifecycle,gesture,proxy,portrait-fit,ios-native,recovery,review,tv)
+        default: seek,legacy,lifecycle,gesture,proxy
         required: true
 
 permissions:

@@ -7,7 +7,7 @@
 //! MediaSource，hls.js 也用不上。Linux 端的播放只能让 GStreamer 的 hlsdemux
 //! 原生完成，而它需要一个真正可取的 HTTP 地址——就是这个服务。
 //!
-//! 端口固定，前端 `src/api.ts` 的 `LOCAL` 必须与 [`ORIGIN`] 一致。
+//! 端口固定，前端 `src/shared/api/api.ts` 的 `LOCAL` 必须与 [`ORIGIN`] 一致。
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -18,7 +18,7 @@ pub const PORT: u16 = 17650;
 /// 前端与 m3u8 分片改写共用的 origin。
 pub const ORIGIN: &str = "http://127.0.0.1:17650";
 
-/// 在后台线程里起服务。绑定失败只记日志（播放会退回自定义协议，大概率失败）。
+/// 在后台线程里起服务。绑定失败时记日志并退出，本地媒体服务不可用，播放会失败。
 pub fn start() {
     std::thread::spawn(|| {
         let listener = match TcpListener::bind(("127.0.0.1", PORT)) {

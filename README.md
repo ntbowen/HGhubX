@@ -57,6 +57,22 @@ Windows / macOS / Linux / Android / iOS · iOS 圆角与玻璃材质 · 沉浸�
 - 环境变量统一使用 `HGHUBX_PROXY`、`HGHUBX_STRICT`、`HGHUBX_TEST_COVER_URL`、`HGHUBX_TEST_MEDIA_URL` 和 `HGHUBX_TEST_MEDIA_OUTPUT`。旧 `HGHUB_*` 名称继续兼容；新变量未设置时才回退旧变量，显式设置的新值（包括空值）优先。安全模式的命令行参数仍优先于环境变量。
 - 网络诊断中的显式代理字段统一为 `HGHUBX_PROXY`，展示兼容读取后的有效值并保持脱敏。
 
+## 工程入口
+
+开发者和 coding agent 先读 [`AGENTS.md`](AGENTS.md)，再按
+[`docs/subsystems/`](docs/subsystems/README.md) 找到要修改的子系统；当前行为、验证命令和变更
+协议都以这两处为准。`make check` 是本地统一入口，GitHub Actions 是合并门禁和验证记录。
+
+项目目录与依赖关系见 [`docs/architecture.md`](docs/architecture.md)：
+
+| 目录 | 内容 |
+| --- | --- |
+| `src/app/` | 应用装配、页面栈、窗口壳与启动门 |
+| `src/features/` | 首页与 Feed、播放、账号、分类、发现、图文、搜索、设置 |
+| `src/shared/` | IPC、共享状态、存储、自动选线、诊断与跨功能 UI |
+| `src/styles/`、`src/index.css` | 统一样式入口与样式文件 |
+| `src-tauri/src/` | Rust 的 API、网络、媒体、线路与平台实现 |
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](LICENSE) —— **仅限非商业用途**。

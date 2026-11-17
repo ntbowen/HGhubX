@@ -1,15 +1,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
-import StartupGate from "./components/LaunchAnimation";
-import { AppProvider } from "./store";
+import App from "./app/App";
+import StartupGate from "./app/startup/LaunchAnimation";
+import { AppProvider } from "./shared/model/store";
 import { invoke } from "@tauri-apps/api/core";
 import "./index.css";
-import { initPlaybackLog, installPlaybackPageEvents, tracePlayback } from "./playbackDiagnostics";
-import { initAutoLine } from "./autoLine";
-import { APP_VERSION, LOCAL, logLine, platform, webviewVersion } from "./api";
+import { initPlaybackLog, installPlaybackPageEvents, tracePlayback } from "./shared/diagnostics/playbackDiagnostics";
+import { initAutoLine } from "./shared/network/autoLine";
+import { APP_VERSION, LOCAL, logLine, platform, webviewVersion } from "./shared/api/api";
 import Hls from "hls.js";
-import { installLayoutDiagnostics } from "./layoutDiagnostics";
+import { installLayoutDiagnostics } from "./shared/diagnostics/layoutDiagnostics";
 installPlaybackPageEvents();
 void initPlaybackLog();
 /* 环境指纹：写进始终记录的 debug.log。用户复制诊断时不用再自报版本、平台、内核版本 */

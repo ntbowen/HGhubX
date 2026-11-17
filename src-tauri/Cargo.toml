@@ -1,6 +1,6 @@
 [package]
 name = "hghubx"
-version = "2.1.2"
+version = "2.2.0"
 description = "HGhubX client"
 authors = ["HGhubX"]
 license = "PolyForm-Noncommercial-1.0.0"
@@ -30,7 +30,7 @@ dom_query = { version = "=0.28.0", default-features = false }
 time = { version = "0.3", features = ["formatting"] }
 # 注意：system-proxy 必须显式列出。关掉 default-features 会连带丢掉它，
 # 客户端就不看 Windows/macOS 固定系统代理而直连，
-# 症状正是「浏览器能开官网、HGhubX 打不开」。见 src/net.rs 顶部说明。
+# 症状正是「浏览器能开官网、HGhubX 打不开」。见 src/net/mod.rs 顶部说明。
 reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls",
   "system-proxy",

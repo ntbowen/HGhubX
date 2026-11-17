@@ -23,8 +23,6 @@
 .video-details-description { color:var(--p-mut); font-size:13px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
 .video-details-sheet { display:flex; flex-direction:column; height:min(72dvh,680px); min-height:0; }
 .mobile-video-meta-copy { padding-right:84px; padding-left:16px; }
-.video-preference-trigger.ios-button { display:inline-flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--hg-ink-3,rgba(255,255,255,.82)); }
-.video-preference-trigger.ios-button:hover,.video-preference-trigger.ios-button:focus-visible { background:rgba(255,255,255,.1); }
 .video-detail-preferences.ios-button { min-height:44px; padding:8px 0 8px 8px; font-size:12px; color:var(--p-mut); }
 @media(max-height:480px) {
   .video-details-sheet { height:calc(100dvh - 72px); }
