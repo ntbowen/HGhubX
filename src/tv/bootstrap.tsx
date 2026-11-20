@@ -6,6 +6,7 @@ import { installPlaybackPageEvents, initPlaybackLog } from "../shared/diagnostic
 import { installRemoteController, registerStartupBack } from "./remote";
 import { installTvDisplay } from "./display";
 import { TvProvider } from "./TvProvider";
+import TvPinGate from "./TvPinGate";
 import TvApp from "./TvApp";
 import "./tv.css";
 installRemoteController();
@@ -19,6 +20,6 @@ function TvStartup(){
     const frame=window.requestAnimationFrame(()=>{void initPlaybackLog();});
     return()=>window.cancelAnimationFrame(frame);
   },[]);
-  return <StartupGate registerBack={registerStartupBack}><TvProvider><TvApp/></TvProvider></StartupGate>;
+  return <StartupGate registerBack={registerStartupBack}><TvPinGate><TvProvider><TvApp/></TvProvider></TvPinGate></StartupGate>;
 }
 createRoot(document.getElementById("root")!).render(<TvStartup/>);

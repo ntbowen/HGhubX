@@ -75,7 +75,9 @@
 - 页面恢复：只有 `wanted=true` 才恢复；原生控件造成的暂停也要被记住，不能凭
   “之前自动播放过”强行继续。
 - seek：preview → commit → `seeking` → `seeked`/`playing`；拖动取消、
-  页面失活或换源不会提交旧目标。
+  页面失活或换源不会提交旧目标。移动端画面横拖（`scrub`）与底栏直拖（`barPct`）统一在底部进度条上
+  加粗高亮预览并展示「目标时间 / 总时长」胶囊，不在屏幕中央叠加进度条；全屏闲置隐藏期间横拖画面会
+  在底部自动唤起进度条。
 - 控件闲置隐藏（`src/features/feed/fsIdle.ts`）：桌面 2.8s（键盘聚焦控件时不隐藏）；
   移动沉浸全屏按设置 `fsIdleSecs`（`hghubx_app_v1` 内，0/3/5/10 秒，默认 3，0=不自动隐藏），
   单击画面切换显隐、双击仍是暂停/播放；暂停时不隐藏。桌面与内嵌全屏统一经
@@ -119,3 +121,6 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 `pnpm test:playback` 使用本地 HLS fixture，需要 FFmpeg 和 Chromium；它不能替代
 iOS WKWebView、Android WebView、Linux GStreamer 的实机矩阵。`test:ios-native-media`
 检查前端传输契约，不证明真机 AVFoundation 已通过。上述命令是验证入口，不代表本轮已经运行。
+`tv` 场景入口是 `scripts/test-tv-remote.mjs`（mock Tauri IPC、真实 TV bootstrap）。视口 resize 后
+必须等焦点提交并断言 `activeElement` 命中目标控件（未命中重试一次），再读焦点派生样式；
+不得在与 resize 同一次 evaluate 里同步断言 `:focus` 样式。

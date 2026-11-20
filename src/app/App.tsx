@@ -41,7 +41,7 @@ const SELECTABLE_TEXT = 'input, textarea, [contenteditable="true"], .select-text
 const isSelectableText = (target: EventTarget | null) => target instanceof Element && !!target.closest(SELECTABLE_TEXT);
 
 function TabBar() {
-  const { tab, setTab, platform } = useStore();
+  const { tab, setTab } = useStore();
   const items = [
     { key: "home", label: "首页", Icon: IHome, Active: IHomeF },
     { key: "search", label: "搜索", Icon: ISearch, Active: ISearch },
@@ -49,8 +49,7 @@ function TabBar() {
     { key: "profile", label: "我的", Icon: IUser, Active: IUserF },
   ] as const;
   const index = items.findIndex(item => item.key === tab);
-  return <nav className="hg-tabbar ios-mobile-nav" aria-label="主导航" data-over-video={tab === "home"}
-    style={{ paddingBottom: platform === "android" ? "var(--sab, 16px)" : "calc(var(--sab, 16px) * .55)" }}>
+  return <nav className="hg-tabbar ios-mobile-nav" aria-label="主导航" data-over-video={tab === "home"}>
       <div className="hg-glass">
       <div className="hg-drop" aria-hidden="true" style={{ transform: `translateX(${index * 100}%)` }}><LiquidIndicator /></div>
       <div className="ios-mobile-nav-items">
@@ -149,7 +148,7 @@ function AppBody() {
   }, [stack.length, pop, setTab, loginOpen, setLoginOpen, fs, setFs]);
 
   const pageActive = stack.length === 0 && !loginOpen;
-  const bottomInset = fs || clean || locked ? 0 : 74;
+  const bottomInset = fs || clean || locked ? 0 : 78;
   /* 栈页（从搜索/分类/我的进入的播放页、图文页）没有底栏，
      底部只让出安全区。之前多留了 20px，视频底边会露出一条
      「底栏」似的窄缝（底部的压暗渐变到不了屏幕最底）。 */

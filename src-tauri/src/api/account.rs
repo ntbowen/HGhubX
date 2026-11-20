@@ -46,9 +46,23 @@ pub async fn api_login(
     state: State<'_, Api>,
     username: String,
     password: String,
+    expected_user_id: Option<i64>,
+    expected_origin: Option<String>,
+    credential_origin: Option<String>,
 ) -> Result<Value, String> {
-    let origin = base();
-    let revision = state.session.revision();
+    // Manual login has no expected identity. Automatic login must still belong
+    // to the initiating session and may only cross verified shared-account lines.
+    let (origin, revision) = match (expected_user_id, expected_origin.as_deref(), credential_origin.as_deref()) {
+        (None, None, None) => (base(), state.session.revision()),
+        (Some(id), Some(expected), Some(saved)) => {
+            let session = state.account_session(Some(id), Some(expected))?;
+            if saved != expected && !(crate::session::rebase_trust(saved) && crate::session::rebase_trust(expected)) {
+                return Err("登录信息不适用于当前线路，请手动重新登录".into());
+            }
+            (session.origin, session.revision)
+        }
+        _ => return Err("自动重新登录缺少账号或线路信息".into()),
+    };
     let data = edge(
         &origin,
         "POST",
@@ -57,19 +71,16 @@ pub async fn api_login(
         None,
     )
     .await?;
+    if base() != origin {
+        return Err("登录期间线路已变化，请重新登录".into());
+    }
     let token = data
         .get("token")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "登录返回缺少 token".to_string())?
         .to_string();
     let account = normalize_account(data, &origin)?;
-    let user = account["user"].clone();
-    if base() != origin {
-        return Err("登录期间线路已变化，请重新登录".into());
-    }
-    if !state.session.set_if_revision(revision, &origin, token, user) {
-        return Err("登录期间账号状态已变化，请重试".into());
-    }
+    state.session.commit_login(revision, &origin, expected_user_id, token, account["user"].clone())?;
     Ok(account)
 }
 

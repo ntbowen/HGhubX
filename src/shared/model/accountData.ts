@@ -9,12 +9,14 @@ export type GuestData = {
   postLikes?: number[]; postFavs?: number[];
   likeEpisodes?: { video_id: number; ep: number }[];
   localHistory?: number[];
+  favEpCounts?: Record<number, number>;
 };
 
 /** Share one library-only boundary without losing guest post or episode interactions. */
 export function pickGuestData(data: GuestData): GuestData {
   return { likes: data.likes, favs: data.favs, follows: data.follows, history: data.history,
-    postLikes: data.postLikes, postFavs: data.postFavs, likeEpisodes: data.likeEpisodes, localHistory: data.localHistory };
+    postLikes: data.postLikes, postFavs: data.postFavs, likeEpisodes: data.likeEpisodes,
+    localHistory: data.localHistory, favEpCounts: data.favEpCounts };
 }
 type AccountData = GuestData & {
   postLikes: number[]; postFavs: number[];
@@ -32,23 +34,50 @@ const validProgress = (value: unknown): value is WatchProgress => {
   return !!row && Number.isSafeInteger(row.id) && row.id > 0 && Number.isFinite(row.at)
     && Number.isSafeInteger(row.ep) && row.ep > 0 && Number.isFinite(row.t) && row.t >= 0 && Number.isFinite(row.dur) && row.dur >= 0;
 };
+function sanitizeEpCounts(raw: Record<number, number> | undefined, favIds: number[]): Record<number, number> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const favSet = new Set(favIds);
+  const entries = Object.entries(raw).filter(([id, count]) => {
+    const numId = Number(id);
+    return favSet.has(numId) && Number.isSafeInteger(count) && count > 0;
+  });
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
 function sanitize(value: Partial<AccountData> | null | undefined): AccountData {
   const data = { ...empty(), ...value };
+  const favs = ids(data.favs);
   // Account snapshots must never retain unrelated application preferences.
-  return { likes: ids(data.likes), favs: ids(data.favs), follows: ids(data.follows), postLikes: ids(data.postLikes), postFavs: ids(data.postFavs),
+  return { likes: ids(data.likes), favs, follows: ids(data.follows), postLikes: ids(data.postLikes), postFavs: ids(data.postFavs),
     history: Array.isArray(data.history) ? data.history.filter(validProgress) : [], localHistory: ids(data.localHistory),
     likeEpisodes: Array.isArray(data.likeEpisodes) ? data.likeEpisodes.filter(row => Number.isSafeInteger(row?.video_id) && row.video_id > 0 && Number.isSafeInteger(row.ep) && row.ep > 0) : undefined,
+    favEpCounts: sanitizeEpCounts(data.favEpCounts, favs),
     dirtyHistory: Object.fromEntries(Object.entries(data.dirtyHistory || {}).filter(([id, row]) => Number.isSafeInteger(Number(id)) && Number(id) > 0 && Number.isSafeInteger(row?.ep) && row.ep > 0 && Number.isFinite(row.at))),
   };
 }
 const selected = (list: number[], id: number, on: boolean) => on ? [id, ...list.filter(x => x !== id)] : list.filter(x => x !== id);
 const message = (error: unknown) => error instanceof Error ? error.message : "账号同步失败，请重试";
+const CREDENTIAL_KEY = "hghubx_credential_v1";
+type SavedCredential = { username: string; password: string; userId: number; origin: string };
+/** 仅用于当前线路账号 401 后的静默重登；不进入日志、IPC 返回值或同步错误文案。 */
+const readCredential = (userId: number): SavedCredential | null => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CREDENTIAL_KEY) || "null") as Partial<SavedCredential> | null;
+    return raw && raw.userId === userId && typeof raw.origin === "string" && raw.origin
+      && typeof raw.username === "string" && raw.username && typeof raw.password === "string" && raw.password
+      ? { username: raw.username, password: raw.password, userId, origin: raw.origin } : null;
+  } catch { return null; }
+};
+export const saveCredential = (username: string, password: string, userId: number, origin: string) => {
+  try { localStorage.setItem(CREDENTIAL_KEY, JSON.stringify({ username, password, userId, origin })); } catch { /* 存储不可用时静默重登降级为手动 */ }
+};
+const clearCredential = () => { try { localStorage.removeItem(CREDENTIAL_KEY); } catch { /* ignore */ } };
 function applyInteractions(data: AccountData, incoming?: AccountInteractions): AccountData {
   if (!incoming) return data;
   const next = { ...data };
   for (const [local, remote] of [["likes", "like_video_ids"], ["favs", "favorite_video_ids"], ["follows", "follow_user_ids"], ["postLikes", "like_post_ids"], ["postFavs", "favorite_post_ids"]] as const) {
     if (Array.isArray(incoming[remote])) next[local] = ids(incoming[remote]);
   }
+  if (Array.isArray(incoming.favorite_video_ids)) next.favEpCounts = sanitizeEpCounts(next.favEpCounts, next.favs);
   if (Array.isArray(incoming.like_video_episodes)) next.likeEpisodes = sanitize({ likeEpisodes: incoming.like_video_episodes }).likeEpisodes;
   return next;
 }
@@ -153,10 +182,13 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     }
     throw new Error("账号历史分页过多，请稍后重试");
   };
+  const authRejected = useRef(false);
+  const authRejectedMsg = useRef("");
   const syncRef = useRef<() => Promise<void>>(async () => {});
-  const syncAccount = useCallback(async () => {
+  const syncAccount = useCallback(async (options?: { manual?: boolean }) => {
     const s = state.current!;
     if (!s.user) return;
+    if (options?.manual) { authRejected.current = false; authRejectedMsg.current = ""; }
     const generation = s.generation;
     if (synchronizing.current?.generation === generation) return synchronizing.current.promise;
     if (clearing.current === generation) return;
@@ -167,11 +199,42 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     const startHistory = new Map(s.data.history.map(row => [row.id, row]));
     const run = (async () => {
       // Only replay observed playback, never silently upload the guest's library.
-      const [profile, remote] = await Promise.allSettled([
+      let [profile, remote] = await Promise.allSettled([
         api.me(auth),
         (async () => { await flushHistory(); return readHistory(auth, generation); })(),
       ]);
       if (!isCurrent(generation)) return;
+      // 镜像/CDN 可能不认其它线路签发的 token：账号 401 时用本机保存的凭据
+      // 在当前线路静默重登一次并重试；失败给可操作提示，不裸抛 401、不循环重登。
+      let reloginError = "";
+      if (((profile.status === "rejected" && message(profile.reason) === "401")
+        || (remote.status === "rejected" && message(remote.reason) === "401")) && state.current!.user) {
+        const credential = readCredential(auth.expectedUserId);
+        if (credential && !authRejected.current) {
+          authRejected.current = true;
+          try {
+            const snapshot = await api.login(credential.username, credential.password, { ...auth, credentialOrigin: credential.origin });
+            if (!isCurrent(generation)) return;
+            if (snapshot.origin !== s.origin || snapshot.user?.id !== state.current!.user?.id) {
+              clearCredential();
+              authRejectedMsg.current = "当前线路返回的账号与本地登录不一致，请手动重新登录";
+              reloginError = authRejectedMsg.current;
+            } else {
+              saveCredential(credential.username, credential.password, auth.expectedUserId, auth.expectedOrigin);
+              [profile, remote] = await Promise.allSettled([
+                api.me(auth),
+                (async () => { await flushHistory(); return readHistory(auth, generation); })(),
+              ]);
+              if (!isCurrent(generation)) return;
+            }
+          } catch (error) {
+            if (!isCurrent(generation)) return;
+            if (/账号与本地登录不一致|密码/.test(message(error))) clearCredential();
+            authRejectedMsg.current = "自动重新登录失败，请在当前线路手动重新登录";
+            reloginError = authRejectedMsg.current;
+          }
+        }
+      }
       let current = state.current!.data;
       let favoritesKnown = state.current!.sync.favoritesKnown;
       const errors: string[] = [];
@@ -184,7 +247,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
           if (Array.isArray(snapshot.interactions?.favorite_video_ids)) favoritesKnown = true;
           else if (!favoritesKnown) errors.push("账号未返回收藏数据，请重试");
         } else if (pending.current.size === 0) needsResync.current = true;
-      } else errors.push(message(profile.reason));
+      } else errors.push(message(profile.reason) === "401" ? (reloginError || authRejectedMsg.current || "当前线路不认此登录态（401），请在本线路重新登录") : message(profile.reason));
       if (remote.status === "fulfilled" && clearVersion.current === startClear) {
         const localRows = new Map(current.history.map(row => [row.id, row]));
         const changed = (row: WatchProgress) => startHistory.get(row.id) !== row;
@@ -201,7 +264,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
           if (!current.dirtyHistory[row.video_id] && (!local || !changed(local))) localOnly.delete(row.video_id);
         }
         current = { ...current, history: [...merged.values()].sort((a, b) => b.at - a.at), localHistory: [...localOnly] };
-      } else if (remote.status === "rejected") errors.push(message(remote.reason));
+      } else if (remote.status === "rejected") errors.push(message(remote.reason) === "401" ? (reloginError || authRejectedMsg.current || "当前线路不认此登录态（401），请在本线路重新登录") : message(remote.reason));
       persist(current);
       if (storageError.current) errors.push(storageError.current);
       state.current!.sync = { busy: false, error: errors.join("；"), lastSynced: errors.length ? s.sync.lastSynced : Date.now(), favoritesKnown };
@@ -240,7 +303,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     s.user = next; s.origin = nextOrigin; s.key = key;
     s.data = next ? accounts.current[key] || applyInteractions(empty(), next.interactions) : guest.current;
     s.sync = { busy: false, error: "", lastSynced: 0, favoritesKnown: false };
-    sentHistory.current.clear(); pending.current.clear(); needsResync.current = false; storageError.current = "";
+    sentHistory.current.clear(); pending.current.clear(); needsResync.current = false; storageError.current = ""; authRejected.current = false; authRejectedMsg.current = "";
     render();
     if (next) void syncRef.current().catch(() => {});
   }, []);
@@ -257,7 +320,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     const version = state.current!.generation;
     await api.logout(state.current!.user ? identity() : undefined);
     if (!isCurrent(version)) throw new Error("账号已切换");
-    setUser(null);
+    setUser(null); clearCredential();
   }, [setUser]);
   const mutate = (key: string, request: (auth: AccountIdentity) => Promise<unknown>, update: (data: AccountData) => AccountData) => {
     const s = state.current!;
@@ -283,9 +346,16 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     }).catch(() => {});
     return run;
   };
-  const setCollected = useCallback((kind: Kind, id: number, on: boolean) => mutate(`collect:${kind}:${id}`,
+  const setCollected = useCallback((kind: Kind, id: number, on: boolean, knownEpisodes?: number) => mutate(`collect:${kind}:${id}`,
     auth => kind === "video" ? api.collect(id, on, auth) : api.postCollect(id, on, auth),
-    data => kind === "video" ? { ...data, favs: selected(data.favs, id, on) } : { ...data, postFavs: selected(data.postFavs, id, on) }), []);
+    data => {
+      if (kind !== "video") return { ...data, postFavs: selected(data.postFavs, id, on) };
+      const favs = selected(data.favs, id, on);
+      const nextCounts = { ...(data.favEpCounts || {}) };
+      if (!on) delete nextCounts[id];
+      else if (knownEpisodes && Number.isSafeInteger(knownEpisodes) && knownEpisodes > 0) nextCounts[id] = knownEpisodes;
+      return { ...data, favs, favEpCounts: sanitizeEpCounts(nextCounts, favs) };
+    }), []);
   const setLiked = useCallback((kind: Kind, id: number, ep: number, on: boolean) => mutate(`like:${kind}:${id}:${ep}`,
     auth => kind === "video" ? api.like(id, ep, on, auth) : api.postLike(id, on, auth), data => {
       if (kind === "post") return { ...data, postLikes: selected(data.postLikes, id, on) };
@@ -313,7 +383,11 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     if (s.user && time !== undefined && time >= 3 && sentHistory.current.get(id) !== nextEp && dirtyHistory[id]?.ep !== nextEp) {
       dirtyHistory = { ...dirtyHistory, [id]: { ep: nextEp, at: row.at } };
     }
-    persist({ ...s.data, history: [row, ...s.data.history.filter(item => item.id !== id)], dirtyHistory, localHistory: selected(s.data.localHistory, id, true) });
+    let favEpCounts = s.data.favEpCounts;
+    if (s.data.favs.includes(id) && favEpCounts?.[id] !== undefined && nextEp > favEpCounts[id]) {
+      favEpCounts = { ...favEpCounts, [id]: nextEp };
+    }
+    persist({ ...s.data, history: [row, ...s.data.history.filter(item => item.id !== id)], dirtyHistory, localHistory: selected(s.data.localHistory, id, true), favEpCounts });
     if (s.user && Object.keys(dirtyHistory).length) scheduleUpload(currentGeneration);
   }, [currentGeneration, currentClearVersion]);
   const clearHistory = useCallback(async () => {
@@ -340,9 +414,30 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
       if (isCurrent(version)) { historyMutation.current++; clearVersion.current++; sentHistory.current.clear(); persist({ ...state.current!.data, history: [], dirtyHistory: {}, localHistory: [] }); }
     } finally { if (clearing.current === version) clearing.current = null; }
   }, []);
+  const seedFavoriteEpisodes = useCallback((entries: Record<number, number>) => {
+    const cur = state.current!.data;
+    const favSet = new Set(cur.favs);
+    const nextCounts = { ...(cur.favEpCounts || {}) };
+    let changed = false;
+    for (const [rawId, count] of Object.entries(entries)) {
+      const id = Number(rawId);
+      if (!favSet.has(id) || nextCounts[id] !== undefined || !Number.isSafeInteger(count) || count <= 0) continue;
+      nextCounts[id] = count;
+      changed = true;
+    }
+    if (changed) persist({ ...cur, favEpCounts: sanitizeEpCounts(nextCounts, cur.favs) });
+  }, []);
+  const ackFavoriteEpisodes = useCallback((id: number, knownEpisodes: number) => {
+    const cur = state.current!.data;
+    if (!cur.favs.includes(id) || !Number.isSafeInteger(knownEpisodes) || knownEpisodes <= 0) return;
+    if ((cur.favEpCounts?.[id] ?? 0) >= knownEpisodes) return;
+    persist({ ...cur, favEpCounts: sanitizeEpCounts({ ...(cur.favEpCounts || {}), [id]: knownEpisodes }, cur.favs) });
+  }, []);
   const localToggle = useCallback((field: "likes" | "favs" | "follows", id: number) => {
     const on = !state.current!.data[field].includes(id); mutation.current++;
-    persist({ ...state.current!.data, [field]: selected(state.current!.data[field], id, on) }); return on;
+    const nextList = selected(state.current!.data[field], id, on);
+    const favEpCounts = field === "favs" ? sanitizeEpCounts(state.current!.data.favEpCounts, nextList) : state.current!.data.favEpCounts;
+    persist({ ...state.current!.data, [field]: nextList, favEpCounts }); return on;
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -356,6 +451,7 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
   return useMemo(() => ({
     user: s.user, setUser, restoreSession, generation, logout, accountScope: `${s.key}:${s.generation}`, accountSync: s.sync,
     syncAccount, likes: s.data.likes, favs: s.data.favs, postLikes: s.data.postLikes, postFavs: s.data.postFavs, follows: s.data.follows, history: s.data.history,
+    favEpCounts: s.data.favEpCounts || {}, seedFavoriteEpisodes, ackFavoriteEpisodes,
     isFav: (id: number, kind: Kind = "video") => (kind === "video" ? s.data.favs : s.data.postFavs).includes(id),
     isLiked: (id: number, ep?: number, kind: Kind = "video") => kind === "post" ? s.data.postLikes.includes(id)
       : ep !== undefined && s.data.likeEpisodes ? s.data.likeEpisodes.some(row => row.video_id === id && row.ep === ep) : s.data.likes.includes(id),
@@ -364,5 +460,5 @@ export function useAccountData(initialGuest: GuestData, saveGuest: (data: GuestD
     toggleLikeLocal: (id: number) => localToggle("likes", id),
     toggleFavLocal: (id: number) => localToggle("favs", id),
     toggleFollowLocal: (id: number) => localToggle("follows", id),
-  }), [rev, drawTick, setUser, restoreSession, generation, logout, syncAccount, setCollected, setLiked, setFollowing, addHistory, clearHistory, localToggle]);
+  }), [rev, drawTick, setUser, restoreSession, generation, logout, syncAccount, seedFavoriteEpisodes, ackFavoriteEpisodes, setCollected, setLiked, setFollowing, addHistory, clearHistory, localToggle]);
 }

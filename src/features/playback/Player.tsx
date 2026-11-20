@@ -87,7 +87,7 @@ export default function Player({
   return (
     <div ref={slotRef} className={`post-player-slot ${className}`}>
       {createPortal(<div ref={wrapRef} className="post-player relative bg-black overflow-hidden"
-        data-playing={playing} data-fullscreen={full} data-fullscreen-fallback={fallback}>
+        data-playing={playing} data-fullscreen={full} data-fullscreen-fallback={fallback} data-scrubbing={seek.scrubbing || undefined}>
         <div className="absolute inset-0" inert={controlsLocked}>
           <VideoSurface
             ref={surfaceRef}
@@ -140,8 +140,15 @@ export default function Player({
           {controls && (
             <div className="player-inline-controls" role="group" aria-label="播放控制">
               <div className="post-player-seek-row">
-                <Input aria-label="播放进度" type="range" {...seek.inputProps}
-                  className="hg-range" style={{ ...seek.inputProps.style, "--fill": `${pct}%` } as React.CSSProperties} />
+                <div className="post-player-seek-wrap">
+                  {seek.scrubbing && (
+                    <span className="post-player-seek-pill" style={{ left: `${Math.max(10, Math.min(90, pct))}%` }}>
+                      <strong>{fmtTime(seek.time)}</strong><span> / {fmtTime(duration)}</span>
+                    </span>
+                  )}
+                  <Input aria-label="播放进度" type="range" {...seek.inputProps}
+                    className="hg-range" style={{ ...seek.inputProps.style, "--fill": `${pct}%` } as React.CSSProperties} />
+                </div>
                 <span className="post-player-time">{fmtTime(seek.time)} / {fmtTime(duration)}</span>
               </div>
               <div className="post-player-actions">

@@ -11,8 +11,8 @@ function ScoreBadge({ score }: { score: number }) {
   </span> : null;
 }
 
-export function MediaCard({ title, cover, subtitle, badge, progress, score, priority = false, onOpen, blockedReason }: {
-  title: string; cover: string; subtitle?: string; badge?: string; progress?: string; score?: number; priority?: boolean; onOpen: () => void; blockedReason?: string | null;
+export function MediaCard({ title, cover, subtitle, badge, badgeTone = "default", progress, score, priority = false, onOpen, blockedReason }: {
+  title: string; cover: string; subtitle?: string; badge?: string; badgeTone?: "default" | "update"; progress?: string; score?: number; priority?: boolean; onOpen: () => void; blockedReason?: string | null;
 }) {
   if (blockedReason) return <Button onClick={onOpen} className="ios-poster" aria-label="该内容命中屏蔽标签，查看提示">
     <span className="ios-poster-art flex flex-col items-center justify-center gap-3 px-3 text-center text-mut">
@@ -27,7 +27,7 @@ export function MediaCard({ title, cover, subtitle, badge, progress, score, prio
   return <Button onClick={onOpen} className="ios-poster" aria-label={title}>
     <span className={`ios-poster-art${badge ? " has-poster-badge" : ""}${hasScore ? " has-score-badge" : ""}`}>
       <Img src={cover} alt="" eager={priority} />
-      {badge && <span className="ios-poster-badge">{badge}</span>}
+      {badge && <span className={`ios-poster-badge${badgeTone === "update" ? " is-update" : ""}`}>{badge}</span>}
       {hasScore && <ScoreBadge score={score} />}
       {progress && <span className="ios-poster-progress"><IPlayF size={12} />{progress}</span>}
       <span className="ios-poster-play" aria-hidden="true"><IPlayF size={23} /></span>

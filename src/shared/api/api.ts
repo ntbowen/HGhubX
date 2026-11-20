@@ -122,8 +122,8 @@ export const api = {
       pending_migration_identity?: { origin: string; user_id: number } | null;
     }>("app_boot"),
   securitySet: (strict: boolean) => call<boolean>("security_set", { strict }),
-  login: (username: string, password: string) =>
-    call<AccountSnapshot>("api_login", { username, password }),
+  login: (username: string, password: string, reauth?: AccountIdentity & { credentialOrigin: string }) =>
+    call<AccountSnapshot>("api_login", { username, password, ...reauth }),
   register: (username: string, password: string, email = "") =>
     call<AccountSnapshot>("api_register", { username, password, email }),
   logout: (identity?: AccountIdentity) => call<{ ok: boolean }>("api_logout", identity ? { expectedUserId: identity.expectedUserId, expectedOrigin: identity.expectedOrigin } : {}),

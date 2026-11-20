@@ -203,7 +203,7 @@ try {
     await page.getByRole("dialog", { name: "屏蔽标签" }).waitFor();
     for (const key of ["Tab", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Tab"]) {
       await page.keyboard.press(key);
-      assert(await page.evaluate(() => !!document.activeElement?.closest('[data-tv-modal="detail-tags:video:1"]')), "Modal must own focus");
+      assert(await page.evaluate(() => !!document.activeElement?.closest('[data-tv-modal="detail-tags:video:1"]')), `Modal must own focus after ${key}: ${await page.evaluate(() => JSON.stringify({ active: document.activeElement?.getAttribute?.("data-tv-focus") ?? document.activeElement?.tagName, hasFocus: document.hasFocus(), modalPresent: !!document.querySelector('[data-tv-modal="detail-tags:video:1"]') }))}`);
     }
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-tv-focus") === "detail:video:1:more");
@@ -441,7 +441,11 @@ try {
     await page.locator('[data-tv-region="home-推荐"] .tv-card').first().waitFor();
     for (const [width, height] of [[1280, 720], [1920, 1080], [3840, 2160]]) {
       await page.setViewportSize({ width, height });
+      // resize 的 device-metrics/layout 提交完成后再聚焦：focus() 落在重建中的渲染 widget 上会静默失效
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       const card = page.locator('[data-tv-region="home-推荐"] .tv-card').first(); await card.focus();
+      if (await card.evaluate(el => el !== document.activeElement)) await card.focus();
+      assert(await card.evaluate(el => el === document.activeElement), `${width}px: .tv-card 未获得焦点（outline 断言前置）`);
       const size = await card.evaluate(element => { const box = element.getBoundingClientRect(); return { x: box.x, y: box.y, right: box.right, bottom: box.bottom,
         text: parseFloat(getComputedStyle(element.querySelector("strong")).fontSize), helper: parseFloat(getComputedStyle(element.querySelector("small")).fontSize), outline: getComputedStyle(element).outlineStyle }; });
       assert(size.text >= 18 * width / 960 - .1); assert(size.helper >= 16 * width / 960 - .1); assert.equal(size.outline, "solid");
@@ -455,6 +459,87 @@ try {
     await screenshot(page, "settings-1280x720.png");
     return measurements;
   });
+  await scenario("pin-lock-gate-and-settings", async () => {
+    const { page } = await open();
+    await page.locator('[data-tv-region="home-推荐"] .tv-card').first().waitFor();
+    assert.equal(await page.locator('[data-tv-modal="tv-pin-gate"]').count(), 0);
+    await activate(page, "nav-settings");
+    await activate(page, "settings-启动密码");
+    const toggle = page.locator('[data-tv-focus="pin-toggle"]');
+    await toggle.waitFor();
+    assert.equal(await toggle.getAttribute("aria-checked"), "false");
+    await activate(page, "pin-toggle");
+    await page.locator('[data-tv-modal="settings-pin"]').waitFor();
+    for (const d of ["1", "2", "3", "4"]) await activate(page, `pin-modal-key-${d}`);
+    for (const d of ["9", "9", "9", "9"]) await activate(page, `pin-modal-key-${d}`);
+    await page.getByText("两次输入的密码不一致，请重新设置").waitFor();
+    for (const d of ["2", "5", "8", "0"]) await activate(page, `pin-modal-key-${d}`);
+    for (const d of ["2", "5", "8", "0"]) await page.keyboard.press(d);
+    await page.locator('[data-tv-modal="settings-pin"]').waitFor({ state: "detached" });
+    assert.equal(await toggle.getAttribute("aria-checked"), "true");
+    const stored = JSON.parse(await page.evaluate(() => localStorage.getItem("hghubx_tv_pin_v1")));
+    assert.deepEqual(Object.keys(stored).sort(), ["enabled", "hash", "salt", "version"]);
+    assert.equal(stored.enabled, true);
+    assert.match(stored.salt, /^[0-9a-f]{32}$/);
+    assert.match(stored.hash, /^[0-9a-f]{64}$/);
+
+    await page.reload();
+    await page.locator(".hg-launch").waitFor({ state: "detached" });
+    const gate = page.locator('[data-tv-modal="tv-pin-gate"]');
+    await gate.waitFor({ state: "visible" });
+    assert.equal(await page.locator('[data-tv-focus="nav-home"]').count(), 0, "App shell must not mount before PIN unlock");
+    assert.equal((await calls(page, "app_boot")).length, 0, "app_boot must not run while locked behind PIN gate");
+    for (const [w, h] of [[1280, 720], [1920, 1080], [3840, 2160]]) {
+      await page.setViewportSize({ width: w, height: h });
+      const box = await page.locator(".tv-pin-card").boundingBox();
+      assert(box.y >= 0 && box.y + box.height <= h, `PIN card must fit vertically inside ${w}x${h}`);
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await screenshot(page, "pin-gate-1280x720.png");
+
+    await page.keyboard.press("2");
+    await page.keyboard.press("5");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.__tvFixture.exits), 0);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.__tvFixture.exits), 0);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__tvFixture.exits === 1);
+
+    for (const d of ["0", "0", "0", "0"]) await page.keyboard.press(d);
+    await page.getByText("PIN 码错误，请重新输入").waitFor();
+    for (const d of ["2", "5", "8", "0"]) await activate(page, `pin-gate-key-${d}`);
+    await page.locator('[data-tv-region="home-推荐"] .tv-card').first().waitFor();
+    assert.equal(await gate.count(), 0);
+
+    await activate(page, "nav-settings");
+    await activate(page, "settings-启动密码");
+    await activate(page, "pin-lock-now");
+    await gate.waitFor({ state: "visible" });
+    for (const d of ["2", "5", "8", "0"]) await page.keyboard.press(d);
+    await page.locator('[data-tv-region="home-推荐"] .tv-card').first().waitFor();
+    await activate(page, "nav-settings");
+    await activate(page, "settings-启动密码");
+    await activate(page, "pin-change");
+    const pinModal = page.locator('[data-tv-modal="settings-pin"]');
+    await pinModal.getByText("请输入当前 4 位 PIN 码", { exact: true }).waitFor();
+    for (const d of ["2", "5", "8", "0", "1", "3", "5", "7", "1", "3", "5", "7"]) await page.keyboard.press(d);
+    await page.getByText("启动密码已更新").waitFor();
+    await pinModal.waitFor({ state: "detached" });
+    await activate(page, "pin-toggle");
+    await pinModal.getByText("请输入当前 4 位 PIN 码以关闭启动密码", { exact: true }).waitFor();
+    for (const d of ["2", "5", "8", "0"]) await page.keyboard.press(d);
+    await page.getByText("PIN 码错误，请重试").waitFor();
+    for (const d of ["1", "3", "5", "7"]) await page.keyboard.press(d);
+    await page.getByText("启动密码已关闭").waitFor();
+    assert.equal(await toggle.getAttribute("aria-checked"), "false");
+    await page.reload();
+    await page.locator('[data-tv-region="home-推荐"] .tv-card').first().waitFor();
+    assert.equal(await gate.count(), 0);
+    return { hashedStorage: true, coldBootGated: true, remoteDigitsAndKeypad: true, changeAndDisable: true };
+  });
   await scenario("standard-build-excludes-tv-resources", async () => {
     await vite.close(); vite = undefined;
     process.env.VITE_APP_EDITION = "standard";
@@ -466,7 +551,7 @@ try {
     assert.deepEqual(forbidden, [], "Standard app bundle must not contain TV modules or pinyin-pro");
     const outputs = (Array.isArray(result) ? result : [result]).flatMap(item => item.output || []);
     const css = outputs.filter(item => item.type === "asset" && item.fileName.endsWith(".css")).map(item => String(item.source)).join("\n");
-    assert(!css.includes(".tv-search-keyboard"));
+    assert(!css.includes(".tv-search-keyboard") && !css.includes(".tv-pin-gate"));
     return { modules: modules.size, forbidden, emitted: outputs.map(item => item.fileName) };
   });
   for (const context of contexts) for (const page of context.pages()) {

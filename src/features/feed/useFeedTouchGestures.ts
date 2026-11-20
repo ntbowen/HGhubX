@@ -35,7 +35,7 @@ type Args = {
   openTagMenu: () => void;
   setPanel: Dispatch<SetStateAction<FeedPanel>>;
   setTagMenu: Dispatch<SetStateAction<boolean>>;
-  toast: (msg: string, icon?: Toast["icon"]) => void;
+  toast: (msg: string, icon?: Toast["icon"], tag?: string) => void;
 };
 
 export function useFeedTouchGestures({
@@ -183,16 +183,20 @@ export function useFeedTouchGestures({
       if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy)) {
         if (g.timer) window.clearTimeout(g.timer);
         g.mode = "scrub";
+        wake();
         videoRef.current?.pause();
-      } else if (Math.abs(dy) > 14) {
-        if (g.timer) window.clearTimeout(g.timer);
-        g.mode = "pan";
+      } else {
+        if (Math.abs(dy) > 14) {
+          if (g.timer) window.clearTimeout(g.timer);
+          g.mode = "pan";
+        }
+        return;
       }
-      return;
     }
 
     if (g.mode === "scrub") {
-      const total = duration || 0;
+      const rawTotal = duration || videoRef.current?.el()?.duration || 0;
+      const total = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : 0;
       if (!total) return;
       const target = Math.max(0, Math.min(total, g.base + (dx / g.width) * total));
       scrubTarget.current = target;
@@ -233,7 +237,10 @@ export function useFeedTouchGestures({
     }
     if (g.mode === "scrub") {
       const target = scrubTarget.current;
-      if (!cancelled && target != null) videoRef.current?.seek(target, "mobile_gesture");
+      if (!cancelled && target != null) {
+        videoRef.current?.seek(target, "mobile_gesture");
+        playbackClock.publish(target);
+      }
       setScrub(null);
       scrubTarget.current = null;
       if (g.playing && active) videoRef.current?.play();
@@ -252,7 +259,7 @@ export function useFeedTouchGestures({
         const want = dir === 1 ? (total > 1 && ep < total ? ep + 1 : 0) : (ep > 1 ? ep - 1 : 0);
         if (swipeEp && kind === "video" && want) {
           setEpMap((m) => ({ ...m, [curId]: want }));
-          toast(`第 ${want}集${total ? ` / ${total}` : ""}`, "info");
+          toast(`第 ${want}集${total ? ` / ${total}` : ""}`, "info", "episode");
           try { navigator.vibrate?.(12); } catch { /* ignore */ }
           return;
         }

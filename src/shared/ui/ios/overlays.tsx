@@ -59,9 +59,9 @@ function syncBackground() {
   }
 }
 
-function DialogFrame({ open, onClose, children, kind, width, label, z }: {
+function DialogFrame({ open, onClose, children, kind, width, label, z, avoidNativeKeyboard }: {
   open: boolean; onClose: () => void; children: ReactNode;
-  kind: "modal" | "sheet" | "guide"; width?: number; label: string; z?: string;
+  kind: "modal" | "sheet" | "guide"; width?: number; label: string; z?: string; avoidNativeKeyboard?: boolean;
 }) {
   const motion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
   const [mounted, setMounted] = useState(open);
@@ -78,6 +78,26 @@ function DialogFrame({ open, onClose, children, kind, width, label, z }: {
     const timeout = setTimeout(() => setMounted(false), motion ? 180 : 0);
     return () => clearTimeout(timeout);
   }, [open, motion]);
+  useLayoutEffect(() => {
+    if (!open || !mounted || !avoidNativeKeyboard || typeof ResizeObserver === "undefined") return;
+    const panel = ref.current?.querySelector<HTMLElement>("[role=dialog]");
+    if (!panel) return;
+    let height = panel.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const nextHeight = panel.clientHeight;
+      const shrank = nextHeight < height;
+      height = nextHeight;
+      const active = document.activeElement;
+      if (!shrank || !active?.matches("input, textarea") || !panel.contains(active)) return;
+      // Move only the panel's scroller, not the background or visual viewport.
+      const field = active.getBoundingClientRect();
+      const viewport = panel.getBoundingClientRect();
+      if (field.bottom > viewport.bottom) panel.scrollTop += field.bottom - viewport.bottom + 12;
+      else if (field.top < viewport.top) panel.scrollTop += field.top - viewport.top - 12;
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [open, mounted, host, avoidNativeKeyboard]);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!open || !mounted || !element) return;
@@ -147,6 +167,7 @@ function DialogFrame({ open, onClose, children, kind, width, label, z }: {
           if (!layers.some(layer => layer.token === token) && event.relatedTarget instanceof HTMLElement
             && !event.currentTarget.contains(event.relatedTarget)) autoFocusPrevious.current = event.relatedTarget;
         }}
+        data-avoid-native-keyboard={avoidNativeKeyboard || undefined}
         aria-hidden={!open || undefined} inert={!open ? true : undefined}>
         {kind !== "guide" && <Button className="ios-overlay-backdrop" aria-label="关闭对话框" onClick={onClose} tabIndex={-1} />}
         <div role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} className="ios-dialog" onKeyDown={event => event.stopPropagation()}
@@ -162,7 +183,7 @@ function DialogFrame({ open, onClose, children, kind, width, label, z }: {
 export function Modal(props: { open: boolean; onClose: () => void; children: ReactNode; width?: number; label?: string }) {
   return <DialogFrame {...props} kind="modal" label={props.label ?? "对话框"} />;
 }
-export function Sheet(props: { open: boolean; onClose: () => void; children: ReactNode; z?: string; label?: string }) {
+export function Sheet(props: { open: boolean; onClose: () => void; children: ReactNode; z?: string; label?: string; avoidNativeKeyboard?: boolean }) {
   return <DialogFrame {...props} kind="sheet" label={props.label ?? "详情面板"} />;
 }
 

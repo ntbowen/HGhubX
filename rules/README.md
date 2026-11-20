@@ -6,8 +6,8 @@
 
 | 匹配方式 | 域名 / 后缀 | 用途及证据 |
 | --- | --- | --- |
-| 后缀 | `huangguoai.com` | 固定 API 线路 1，正文相对 URL 的基址；`src-tauri/src/net/`、`src/shared/lib/html.ts` |
-| 后缀 | `huangguoai.ai` | 固定 API 线路 2；`src-tauri/src/lines/` |
+| 后缀 | `huangguoai.com` | 唯一的固定 API 线路，正文相对 URL 的基址；`src-tauri/src/net/`、`src/shared/lib/html.ts` |
+| 后缀 | `huangguoai.ai` | 导航站，保留分流规则，但不作为固定 API 线路；`src-tauri/src/lines/mirror.rs` |
 | 精确 | `huangguoai.pages.dev` | 镜像发布页及其 `publish.js`；`src-tauri/src/lines/` |
 | 后缀 | `drleao.cn` | 图片 CDN 样本 `pic.drleao.cn`；`src-tauri/src/media/` 联网测试 |
 | 后缀 | `hzjvlo.cn` | 视频 CDN 样本 `yd-lphu-hls.hzjvlo.cn`；`src-tauri/src/media/` 联网测试 |

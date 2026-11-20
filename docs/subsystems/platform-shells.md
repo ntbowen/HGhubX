@@ -131,6 +131,23 @@ loopback、Windows 的自定义标题栏与注册表代理判断、Android 的 W
    `StartupGate` 首帧独占提交合成线程动画，下一帧再并发挂载已分离 `Feed`/`hls.js` 的业务壳，
    待入场时间满足且底层界面提交（`contentReady` 或超时兜底）后再释放 `data-hg-launching`、同步
    `meta[name="theme-color"]` 并淡出覆盖层。
+8. 标准版登录弹层单独避让软键盘。`scripts/patch-android-splash.mjs` 生成的 `MainActivity`
+   用原生窗口的输入法边距和 WebView 实际位置计算底部遮挡量；窗口已缩小的部分不重复预留，
+   键盘收起后清除 `--native-ime-overlap`。`LoginModal` 启用该边距，弹层在键盘上方滚动，
+   可在键盘保持展开时将密码框和提交按钮滚到可见位置；弹层缩小时将被裁切的已聚焦输入框带回屏内。
+   其他弹层、TV 版和 iOS 不使用这条路径。
+
+### 共享页面壳几何
+
+`src/styles/ios.css` 的 `.ios-page` 标题与滚动体共用一条宽度规则：窄屏全宽，
+宽屏以 `clamp(720px, 62vw, 960px)` 限宽居中；不支持 `clamp()` 时用 `960px` 作上限。
+移动壳合并 Android 原生 inset 与 iOS WebView 的 CSS 安全区；标题、内容和浮动底栏按左、右
+分别留出内边距，底栏在原生手势区之上，同级滚动页继续留出最后一项的可见距离。
+挂到移动壳外的模态框与半屏面板直接读取同一套原生变量和 `env()`，低高度横屏缩小外边距，
+内容过长时在安全区内滚动。老 WebView 用原生变量回退，无需新增布局依赖。
+
+`scripts/test-ui-feedback.mjs` 的同一组几何断言覆盖 320/390px 竖屏、667px 横屏
+（模拟左右非对称安全区）、768/1024px 平板及 1280px 桌面视口。Chromium 模拟不等同于原生设备验收。
 
 ## 状态转换
 
@@ -169,3 +186,6 @@ node scripts/test-ios-native-media.mjs
 单元测试覆盖 macOS 红绿灯居中、Apple 代理匹配、Linux 响应头/HEAD、iOS 请求校验和媒体
 Range。浏览器脚本只能验证前端传输契约与布局，不替代 iOS WKWebView、Android WebView、
 Linux GStreamer 或 Windows WebView2 的实机矩阵；真机结果应单独记录为“已验证/待核实”。
+Android 登录键盘需安装标准版 APK，用原生软键盘复测 `320 × 568 dp` 和 `360 × 840 dp`：
+进入「我的 → 登录」，保持键盘展开，上划到密码框与「登录」按钮，确认按钮仍可操作；收起键盘后
+弹层恢复普通高度。浏览器几何测试不替代此验收。

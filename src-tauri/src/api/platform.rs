@@ -63,8 +63,11 @@ pub async fn app_boot(state: State<'_, Api>) -> Result<Value, String> {
         state.session.reconcile_on_boot(&origin).await;
     }
     let origin = base();
-    let credentials_allowed = !crate::network_policy::strict_security()
-        || crate::net::trusted_auth_origin(&origin);
+    let credentials_allowed = crate::session::boot_credentials_visible(
+        crate::network_policy::strict_security(),
+        crate::net::trusted_auth_origin(&origin),
+        state.session.token(&origin).is_some(),
+    );
     Ok(json!({
         "user": if credentials_allowed { state.session.user(&origin) } else { Value::Null },
         "logged_in": credentials_allowed && state.session.token(&origin).is_some(),

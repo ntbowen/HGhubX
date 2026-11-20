@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, isMobile } from "../../shared/api/api";
+import { api, isAndroid, isMobile } from "../../shared/api/api";
 import type { User } from "../../shared/api/types";
 import { useStore } from "../../shared/model/store";
+import { saveCredential } from "../../shared/model/accountData";
 import { Modal, Sheet } from "../../shared/ui/ui";
 import { Button, Form, Input, SegmentedControl } from "../../shared/ui/ios/controls";
 import { Loader } from "../../shared/ui/ios/effects";
@@ -57,6 +58,7 @@ export default function LoginModal() {
         setErr("账号或线路已变化，请重新登录");
         return;
       }
+      saveCredential(username.trim(), password, result.user.id, result.origin);
       setUser(result.user as User, result.origin); setPassword(""); setLoginOpen(false);
       toast(mode === "login" ? `欢迎回来，${result.user?.nickname || username}` : "注册成功", "ok");
     } catch (error) { if (mounted.current) setErr(error instanceof Error ? error.message : "操作失败，请重试"); }
@@ -89,6 +91,6 @@ export default function LoginModal() {
     </Form>
     <p className="ios-description ios-auth-note">登录状态与当前站点绑定；使用自定义镜像时，登录请求会发送到你填写的站点，跨站点切换需重新登录。</p>
   </div>;
-  return isMobile ? <Sheet open={loginOpen} onClose={close} label={title}>{content}</Sheet>
+  return isMobile ? <Sheet open={loginOpen} onClose={close} label={title} avoidNativeKeyboard={isAndroid}>{content}</Sheet>
     : <Modal open={loginOpen} onClose={close} label={title} width={440}>{content}</Modal>;
 }

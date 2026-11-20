@@ -23,6 +23,7 @@ XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, 
 const fixture = {
   rejectPlaybackApi: new URLSearchParams(location.search).has("api-failure"),
   seeks: [] as number[], errors: [] as string[],
+  playCalls: [] as [number, number][],
   setActive: (_active: boolean) => {},
   setMounted: (_mounted: boolean) => {},
   logs: [] as { event: string; data: Record<string, unknown> }[],
@@ -50,6 +51,9 @@ const delayedMount = new URLSearchParams(location.search).has("delayed-mount");
 // issue #142 fit 回归：手机竖屏视口下按真实视口尺寸铺满播放面，
 // 并跳过仅桌面端会成立的闲置进度条命中测试（移动端没有 .player-root.is-idle）。
 const portraitFitTest = new URLSearchParams(location.search).has("portrait-fit");
+// 2.2.0 反馈回归：多集详情 + 下一集地址延迟解析，制造切集过渡期窗口。
+// 延迟闸门由测试脚本在页面初始化时注入（window.__playGate）， harness 只消费。
+const swipeEpTest = new URLSearchParams(location.search).has("swipe-ep");
 if (diagnosticTest) {
   // Test-only handle: exercise the real engine's public API without rewriting production modules.
   const attach = Hls.prototype.attachMedia;
@@ -87,14 +91,19 @@ document.addEventListener("seeking", (e) => {
 }, true);
 window.addEventListener("error", (e) => fixture.errors.push(e.message));
 api.boot = async () => ({ user: null, logged_in: false, base: "https://fixture.invalid", strict_security: true });
-api.play = async () => {
+api.play = async (id = 991, ep = 1) => {
   if (fixture.rejectPlaybackApi) throw new Error("fixture playback API unavailable");
-  return { id: 991, ep_num: 1, title: "Seek fixture", duration: 90, video_url: "https://media.fixture.invalid/list.m3u8" };
+  if (swipeEpTest) {
+    fixture.playCalls.push([id, ep]);
+    const gate = (window as typeof window & { __playGate?: Promise<void> }).__playGate;
+    if (ep > 1 && gate) await gate;
+  }
+  return { id, ep_num: ep, title: "Seek fixture", duration: 90, video_url: "https://media.fixture.invalid/list.m3u8" };
 };
-api.video = async () => ({
-  id: 991, title: "Seek fixture", description: "", cover: "", tags: [], score: 0,
-  episode_count: 1, total_episodes: 1,
-  episodes: [{ ep_num: 1, title: "one", duration: 90, status: 1 }],
+api.video = async (id = 991) => ({
+  id, title: id === 991 ? "Seek fixture" : "Other fixture", description: "", cover: "", tags: [], score: 0,
+  episode_count: swipeEpTest && id === 991 ? 3 : 1, total_episodes: swipeEpTest && id === 991 ? 3 : 1,
+  episodes: (swipeEpTest && id === 991 ? [1, 2, 3] : [1]).map(ep_num => ({ ep_num, title: `ep${ep_num}`, duration: 90, status: 1 })),
   counts: { like: 0, collect: 0, comment: 0, hot: 0 },
   author: { id: 1, name: "Fixture" }, is_finished: true, is_original: 0,
 });
@@ -112,7 +121,7 @@ function Fixture() {
         ? <Player src="https://media.fixture.invalid/list.m3u8" autoPlay active={active} className="w-full h-full" diagnosticContext={{ video_id: 991, active }} />
         : delayedMount
           ? <VideoSurface src="https://media.fixture.invalid/list.m3u8" autoPlay active={active} className="w-full h-full" diagnosticContext={{ video_id: 991, active }} />
-          : <Feed videoIds={[991]} mode="home" active={active} bottomInset={0} />)}
+          : <Feed videoIds={swipeEpTest ? [991, 992] : [991]} mode="home" active={active} bottomInset={0} />)}
     </div>
     <button onClick={() => setActive((v) => !v)}>切换播放页激活状态</button>
     {diagnosticTest && <button onClick={() => setSettings(v => !v)}>诊断设置</button>}

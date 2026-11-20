@@ -99,6 +99,7 @@ html.theme-light {
 .ios-poster-art { position:relative; display:block; width:100%; aspect-ratio:3/4; border-radius:18px; overflow:hidden; background:var(--p-s3); box-shadow:0 4px 12px rgb(0 0 0 / .06); transform:translateZ(0); }
 .ios-poster-art::after { content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit; box-shadow:inset 0 0 0 .5px rgb(0 0 0 / .10); }
 .ios-poster-badge { position:absolute; top:9px; left:9px; display:inline-flex; align-items:center; min-height:25px; height:25px; max-width:calc(100% - 18px); padding:0 8.5px; background:rgb(20 20 25 / .76); color:#fff; border:1px solid rgb(255 255 255 / .22); border-radius:999px; font-size:12px; font-weight:550; line-height:1; }
+.ios-poster-badge.is-update { background:linear-gradient(135deg,#0284c7,#0ea5e9); color:#fff; border-color:rgb(255 255 255 / .36); font-weight:650; box-shadow:0 2px 10px rgb(2 132 199 / .42); }
 .ios-poster-art.has-score-badge .ios-poster-badge { max-width:calc(100% - 76px); }
 .ios-poster-progress { position:absolute; inset:auto 0 0; display:flex; align-items:center; gap:5px; padding:24px 12px 11px; background:linear-gradient(transparent,rgb(0 0 0 / .8)); color:#fff; font-size:12px; line-height:1.2; font-variant-numeric:tabular-nums; }
 .ios-poster-play { position:absolute; left:calc(50% - 25px); top:calc(50% - 25px); display:grid; place-items:center; width:50px; height:50px; border-radius:50%; color:#fff; background:rgb(20 20 25 / .6); border:1px solid rgb(255 255 255 / .35);  opacity:0; transition:opacity .16s; }
@@ -121,9 +122,22 @@ html.theme-light {
 .ios-subpage-header { background:var(--p-s1); border-bottom:1px solid var(--ios-edge); }
 .ios-subpage-bar { display:flex; align-items:center; gap:10px; min-height:56px; padding-block:8px; }
 .ios-nav-btn.ios-button { display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; min-width:40px; min-height:40px; padding:0; flex-shrink:0; border-radius:50%; color:var(--p-on); background:transparent; }
+/* Titles and scrollers share one column. Phones fill the viewport; the
+   padding, not the page width, absorbs asymmetric system insets. */
 .ios-page { container-type:inline-size; background:var(--p-bg); }
-.ios-page>.scroll-y { padding-inline:var(--ios-page-inset); }
-.ios-page>.shrink-0 { padding-inline:var(--ios-page-inset); }
+.ios-page>.scroll-y,.ios-page>.shrink-0 {
+  width:100%; max-width:960px; margin-left:auto; margin-right:auto;
+  padding-left:calc(var(--ios-page-inset) + var(--sal,0px));
+  padding-right:calc(var(--ios-page-inset) + var(--sar,0px));
+}
+.plat-android .ios-tab-active .ios-page>.scroll-y,
+.plat-ios .ios-tab-active .ios-page>.scroll-y {
+  /* 66px navigation surface + 12px top gap + 12px content clearance. */
+  padding-bottom:calc(90px + var(--sab,0px));
+}
+@supports (width:clamp(720px, 62vw, 960px)) {
+  .ios-page>.scroll-y,.ios-page>.shrink-0 { max-width:clamp(720px, 62vw, 960px); }
+}
 .ios-page-title { font-size:34px; line-height:1.2; font-weight:750; letter-spacing:-1px; }
 .ios-page-heading { padding-top:calc(var(--sat,0px) + 24px); padding-bottom:16px; }
 .ios-account-card { border-radius:28px; background:var(--p-s1); padding:22px; box-shadow:0 3px 16px rgb(0 0 0 / .035); }
@@ -134,13 +148,36 @@ html.theme-light {
 .ios-setting-group>:not(:last-child) { border-bottom:.5px solid var(--ios-edge); }
 .ios-setting-icon { display:inline-flex; align-items:center; justify-content:center; flex:none; border-radius:50%; width:36px; height:36px; background:var(--p-pc); color:var(--p-on-pc); }
 .ios-section-label { font-size:13px; font-weight:500; color:var(--p-mut); margin:28px 0 9px; padding-inline:16px; }
-.ios-overlay { position:absolute; inset:0; z-index:calc(260 + var(--ios-overlay-order,0)); display:flex; padding:24px; align-items:center; justify-content:center; --sab:max(var(--native-sab,0px),env(safe-area-inset-bottom,0px)); }
+.ios-overlay {
+  position:absolute; top:0; right:0; bottom:0; left:0;
+  z-index:calc(260 + var(--ios-overlay-order,0)); display:flex; align-items:center; justify-content:center;
+  --overlay-gap:24px;
+  --overlay-sat:var(--native-sat,0px); --overlay-sar:var(--native-sar,0px);
+  --sab:var(--native-sab,0px); --overlay-sal:var(--native-sal,0px);
+  padding:calc(var(--overlay-gap) + var(--overlay-sat)) calc(var(--overlay-gap) + var(--overlay-sar))
+    calc(var(--overlay-gap) + var(--overlay-bottom,var(--sab))) calc(var(--overlay-gap) + var(--overlay-sal));
+}
+.ios-overlay[data-avoid-native-keyboard="true"] {
+  --overlay-bottom:var(--native-ime-overlap,var(--sab));
+}
+@supports (top:max(1px,2px)) {
+  /* Portals can live outside MobileShell, so read the same native/env inputs. */
+  .ios-overlay {
+    --overlay-sat:max(var(--native-sat,0px),env(safe-area-inset-top,0px));
+    --overlay-sar:max(var(--native-sar,0px),env(safe-area-inset-right,0px));
+    --sab:max(var(--native-sab,0px),env(safe-area-inset-bottom,0px));
+    --overlay-sal:max(var(--native-sal,0px),env(safe-area-inset-left,0px));
+  }
+  .ios-overlay[data-avoid-native-keyboard="true"] {
+    --overlay-bottom:max(var(--sab),var(--native-ime-overlap,0px));
+  }
+}
 .ios-overlay-backdrop.ios-button { position:absolute; inset:0; width:100%; height:100%; background:var(--ios-scrim); border:0; min-height:0; border-radius:0; box-shadow:none; cursor:default;  }
-.ios-dialog { position:relative; display:flex; flex-direction:column; min-width:0; width:min(var(--ios-dialog-width,440px),100%); max-height:calc(100dvh - 48px); border-radius:32px; background:var(--ios-glass); color:var(--p-on); border:1px solid var(--ios-edge); box-shadow:var(--ios-shadow),0 24px 80px rgb(0 0 0 / .15); backdrop-filter:blur(32px) saturate(150%); -webkit-backdrop-filter:blur(32px) saturate(150%); overflow:auto; overscroll-behavior:contain; }
+.ios-dialog { position:relative; display:flex; flex-direction:column; min-width:0; width:100%; max-width:var(--ios-dialog-width,440px); max-height:100%; border-radius:32px; background:var(--ios-glass); color:var(--p-on); border:1px solid var(--ios-edge); box-shadow:var(--ios-shadow),0 24px 80px rgb(0 0 0 / .15); backdrop-filter:blur(32px) saturate(150%); -webkit-backdrop-filter:blur(32px) saturate(150%); overflow:auto; overscroll-behavior:contain; }
 .ios-overlay.is-open .ios-dialog { animation:ios-dialog-in .24s cubic-bezier(.2,.8,.2,1) both; }
 .ios-overlay.is-closing { pointer-events:none; opacity:0; transition:opacity .18s; }
-.ios-overlay-sheet { align-items:end; padding:0 10px 10px; }
-.ios-overlay-sheet .ios-dialog { width:min(640px,100%); max-height:calc(100dvh - max(var(--native-sat,0px),env(safe-area-inset-top),24px)); padding-bottom:max(var(--native-sab,0px),env(safe-area-inset-bottom),12px); }
+.ios-overlay-sheet { align-items:flex-end; --overlay-gap:10px; }
+.ios-overlay-sheet .ios-dialog { max-width:640px; padding-bottom:12px; }
 .ios-overlay-sheet.is-open .ios-dialog { animation:ios-sheet-in .28s cubic-bezier(.2,.8,.2,1) both; }
 .ios-sheet-grip { width:36px; height:5px; border-radius:4px; background:var(--p-dim); opacity:.5; margin:12px auto 6px; flex-shrink:0; }
 .ios-auth { padding:28px; }
@@ -201,9 +238,8 @@ html.theme-light {
   .player-control.ios-button { min-width:44px; min-height:44px; }
 }
 @media(max-width:479px) {
-  .ios-overlay { padding:14px; }
-  .ios-overlay-sheet { padding:0 8px max(env(safe-area-inset-bottom),8px); }
-  .ios-dialog { max-height:calc(100dvh - 28px); }
+  .ios-overlay { --overlay-gap:14px; }
+  .ios-overlay-sheet { --overlay-gap:8px; }
   .ios-auth { padding:22px; }
   .ios-dialog-heading { gap:8px; }
   .ios-dialog-heading h2 { font-size:20px; }
@@ -213,7 +249,7 @@ html.theme-light {
   .ios-rank-row { gap:10px; padding:12px 14px; }
 }
 @media(max-height:480px) and (orientation:landscape) {
-  .ios-overlay-sheet .ios-dialog { max-height:calc(100dvh - 16px); }
+  .ios-overlay { --overlay-gap:8px; }
 }
 @media(prefers-reduced-motion:reduce) {
   *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; scroll-behavior:auto!important; }
@@ -222,6 +258,7 @@ html.theme-light {
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {
   .ios-dialog,.ios-mobile-nav .hg-glass,.ios-toast-host>div,.win-search-launch { background:var(--ios-glass-solid); backdrop-filter:none; -webkit-backdrop-filter:none; }
   .ios-poster-badge,.ios-poster-play { background:#252529; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .ios-poster-badge.is-update { background:#0369a1; }
 }
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
   .ios-dialog,.ios-mobile-nav .hg-glass,.ios-toast-host>div,.win-search-launch { background:var(--ios-glass-solid); }
@@ -330,7 +367,9 @@ body { background:var(--motion-paper); }
 .ios-poster:active { scale:.975; }
 .ios-poster-title { letter-spacing:0; }
 
-.ios-mobile-nav { padding:12px 14px calc(12px + max(var(--native-sab,0px),env(safe-area-inset-bottom,0px))); }
+.ios-mobile-nav {
+  padding:12px calc(14px + var(--sar,0px)) var(--sab,0px) calc(14px + var(--sal,0px));
+}
 .ios-mobile-nav .hg-glass { height:66px; }
 .ios-mobile-nav .hg-drop { top:6px; bottom:6px; transition:transform .34s var(--motion-spring); }
 .ios-mobile-nav .hg-drop>.ios-liquid-fill { margin-inline:4px; width:calc(100% - 8px); background:var(--motion-ink); box-shadow:0 4px 0 rgb(25 25 25 / .12); }

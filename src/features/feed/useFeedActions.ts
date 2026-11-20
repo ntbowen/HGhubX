@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import type { Detail, Episode, Post, User } from "../../shared/api/types";
+import { detailEpisodeCount } from "../../shared/model/favoriteProgress";
 import type { Toast } from "../../shared/model/store";
 import type { VideoHandle } from "../playback";
 
@@ -43,7 +44,7 @@ type Args = {
   isLiked: (id: number, ep: number, kind?: "video" | "post") => boolean;
   isFav: (id: number, kind?: "video" | "post") => boolean;
   setLiked: (kind: "video" | "post", id: number, ep: number, on: boolean) => Promise<void>;
-  setCollected: (kind: "video" | "post", id: number, on: boolean) => Promise<void>;
+  setCollected: (kind: "video" | "post", id: number, on: boolean, knownEpisodes?: number) => Promise<void>;
   setFollowing: (uid: number, on: boolean) => Promise<void>;
   actionPending: (key: string) => boolean;
   toast: (msg: string, icon?: Toast["icon"]) => void;
@@ -88,8 +89,9 @@ export function useFeedActions({
     if (!curId || collectPending || pendingActions.current.has(pendingKey)) return;
     pendingActions.current.add(pendingKey);
     const on = !collected;
+    const knownEpisodes = kind === "video" ? (detail ? detailEpisodeCount(detail) : meta.episodes.length) : undefined;
     try {
-      await setCollected(kind, curId, on);
+      await setCollected(kind, curId, on, knownEpisodes);
       if (actionIsCurrent()) toast(on ? "已收藏" : "已取消收藏", on ? "star" : "info");
     } catch (error) {
       if (actionIsCurrent()) toast(error instanceof Error ? error.message : "收藏失败，请重试", "info");

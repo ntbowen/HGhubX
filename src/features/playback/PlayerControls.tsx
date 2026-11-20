@@ -65,11 +65,17 @@ export default function PlayerControls({
         // Native button activation must not also toggle Feed's playback shortcut.
         if ([" ", "Enter"].includes(event.key) && (event.target as HTMLElement).closest("button")) event.stopPropagation();
       }}>
-      <div className={`desktop-seek ${seekEnabled ? "is-seekable" : ""}`}>
+      <div className={`desktop-seek ${seekEnabled ? "is-seekable" : ""} ${seek.scrubbing ? "is-scrubbing" : ""}`}>
         <div className="desktop-seek-track">
           <span className="desktop-seek-buffer" style={{ width: `${Math.min(1, buffered) * 100}%` }} />
           <span className="desktop-seek-played" style={{ width: `${pct}%` }} />
         </div>
+        <span className="desktop-seek-thumb" style={{ left: `${pct}%` }} />
+        {seek.scrubbing && (
+          <span className="desktop-seek-preview" style={{ left: `${Math.max(6, Math.min(94, pct))}%` }}>
+            <strong>{formatClock(seek.time)}</strong><span> / {formatClock(duration)}</span>
+          </span>
+        )}
         <Input aria-label="播放进度" type="range" {...seek.inputProps} />
       </div>
 

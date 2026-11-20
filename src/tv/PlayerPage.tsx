@@ -338,7 +338,7 @@ export default function PlayerPage({ content, sourceKey, part: initialPart, resu
         {saveError && <p role="alert">{saveError}</p>}
         {preferenceError && <p role="alert">{preferenceError}</p>}
         <div data-tv-region="player-progress" className="tv-player-progress-row">
-          <button data-tv-focus="player:progress" className="tv-player-progress" disabled={!duration} aria-label={`播放进度 ${fmtTime(displayTime)}，总时长 ${fmtTime(duration)}。左右预览，确认跳转`} onClick={() => { if (seek !== null) commitSeek(); else { setSeek(time); interact(); } }}>
+          <button data-tv-focus="player:progress" data-seeking={seek !== null || undefined} className="tv-player-progress" disabled={!duration} aria-label={`播放进度 ${fmtTime(displayTime)}，总时长 ${fmtTime(duration)}。左右预览，确认跳转`} onClick={() => { if (seek !== null) commitSeek(); else { setSeek(time); interact(); } }}>
             <span className="tv-player-progress-track"><span style={{ width: `${percent}%` }} /></span><span className="tv-player-progress-time">{fmtTime(displayTime)} / {fmtTime(duration)}</span>
           </button>
         </div>

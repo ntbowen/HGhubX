@@ -32,6 +32,7 @@ type Props = {
   clean: boolean;
   idle: boolean;
   rotated: boolean;
+  vpLandscape: boolean;
   theater: boolean;
   setTheater: Dispatch<SetStateAction<boolean>>;
   fullscreen: boolean;
@@ -69,6 +70,7 @@ type Props = {
   articleHtml: string;
   panel: FeedPanel;
   setPanel: Dispatch<SetStateAction<FeedPanel>>;
+  scrub: { pct: number; target: number } | null;
   barPct: number | null;
   onBarDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onBarMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -90,18 +92,22 @@ type Props = {
 
 export function FeedPlayerShellChrome({
   videoRef, speedLockTargetRef, barRef, playbackClock,
-  isDesktop, active, fs, idle, rotated, theater, setTheater, fullscreen, controlsLocked,
+  isDesktop, active, fs, idle, rotated, vpLandscape, theater, setTheater, fullscreen, controlsLocked,
   paused, duration, rate, setRate, effRate, holdSpeed, holdSlow, speedLock, setSpeedLock, lockArmed,
   muted, setMuted, volume, setVolume, swipeEp, setSwipeEp,
   playKey, curId, curEp, index, effectiveLength, kind, meta, likeCount, collectCount, episodes, related,
   follows, followPending, post, articleHtml, panel, setPanel,
-  barPct, onBarDown, onBarMove, onBarUp,
+  scrub, barPct, onBarDown, onBarMove, onBarUp,
   pickEp, go, togglePip, lockControls, toggleFull, exitFs,
   onFollow, openTag, openTagMenu, closePanels, pushPage, toast,
 }: Omit<Props, "clean" | "onSearchTab">) {
   const liveMeta = { ...meta, like: likeCount, collect: collectCount };
-  const fsSafeLeft = rotated ? "calc(var(--sat, 0px) + 16px)" : "calc(var(--sal, 0px) + 16px)";
-  const fsSafeRight = rotated ? "calc(var(--sab, 0px) + 16px)" : "calc(var(--sar, 0px) + 16px)";
+  const landscapeStage = rotated || vpLandscape;
+  const edgePad = landscapeStage ? 24 : 16;
+  const fsSafeLeft = rotated ? `calc(var(--sat, 0px) + ${edgePad}px)` : `calc(var(--sal, 0px) + ${edgePad}px)`;
+  const fsSafeRight = rotated ? `calc(var(--sab, 0px) + ${edgePad}px)` : `calc(var(--sar, 0px) + ${edgePad}px)`;
+  const activePct = barPct ?? (scrub ? scrub.pct / 100 : null);
+  const scrubbing = activePct !== null;
   const detailBody = (onClose?: () => void) => (
     <VideoDetailsPanel meta={liveMeta} videoId={curId} episodeCount={episodes.length}
       related={related} following={follows.includes(meta.authorId)} followPending={followPending}
@@ -160,32 +166,46 @@ export function FeedPlayerShellChrome({
         </Button>
       )}
 
-      {/* 移动端全屏进度条，普通模式的进度条位于标题下方 */}
-      {!isDesktop && fs && (!idle || barPct !== null) && (
+      {/* 移动端全屏进度条（横竖屏统一在底部突出显示，闲置隐藏时横拖画面自动唤起底部条） */}
+      {!isDesktop && fs && (!idle || scrubbing) && (
         <div
           className="absolute inset-x-0 z-30 px-4"
           style={{
-            bottom: rotated ? 46 : "calc(var(--sab, 0px) + 46px)",
+            bottom: rotated ? (idle ? 16 : 46) : `calc(var(--sab, 0px) + ${idle ? 16 : 46}px)`,
             paddingLeft: fsSafeLeft,
             paddingRight: fsSafeRight,
             height: 36,
+            transition: "bottom .2s cubic-bezier(.2,0,0,1)",
           }}>
-          <div ref={barRef} className="relative h-full" style={{ touchAction: "none" }}
+          <div ref={barRef} data-seek-bar data-scrubbing={scrubbing || undefined} className="relative h-full" style={{ touchAction: "none" }}
             onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={(e) => onBarUp(e, false)} onPointerCancel={(e) => onBarUp(e, true)}>
-            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full" style={{ background: "rgba(255,255,255,.28)" }}>
-              <PlaybackProgress clock={playbackClock} duration={duration} preview={barPct} className="h-full rounded-full bg-white"
-                style={{ transition: barPct !== null ? "none" : "width .25s linear" }} />
-            </div>
-            <PlaybackProgress clock={playbackClock} duration={duration} preview={barPct} position
-              className="absolute top-1/2 w-[9px] h-[9px] rounded-full bg-white pointer-events-none"
+            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full overflow-hidden"
               style={{
+                height: scrubbing ? 7 : 3,
+                background: scrubbing ? "rgba(255,255,255,.32)" : "rgba(255,255,255,.26)",
+                boxShadow: scrubbing ? "0 2px 12px rgba(0,0,0,.5)" : "none",
+                transition: "height .16s cubic-bezier(.2,0,0,1), background-color .16s ease, box-shadow .16s ease",
+              }}>
+              <PlaybackProgress clock={playbackClock} duration={duration} preview={activePct} className="h-full rounded-full bg-white"
+                style={{
+                  boxShadow: scrubbing ? "0 0 12px rgba(255,255,255,.55)" : "none",
+                  transition: scrubbing ? "none" : "width .25s linear",
+                }} />
+            </div>
+            <PlaybackProgress clock={playbackClock} duration={duration} preview={activePct} position
+              className="absolute top-1/2 rounded-full bg-white pointer-events-none"
+              style={{
+                width: scrubbing ? 15 : 9,
+                height: scrubbing ? 15 : 9,
                 transform: "translate(-50%, -50%)",
-                boxShadow: "0 0 8px rgba(0,0,0,.55)",
-                transition: barPct !== null ? "none" : "left .25s linear",
+                boxShadow: scrubbing ? "0 0 0 4px rgba(255,255,255,.26), 0 2px 8px rgba(0,0,0,.6)" : "0 0 8px rgba(0,0,0,.55)",
+                transition: scrubbing ? "width .14s ease, height .14s ease, box-shadow .14s ease" : "left .25s linear, width .14s ease, height .14s ease, box-shadow .14s ease",
               }} />
-            {barPct !== null && (
-              <div className="absolute left-1/2 -translate-x-1/2 -top-7 px-2.5 py-1 rounded-md hg-chip-strong backdrop-blur-md text-[13px] font-bold tabular-nums whitespace-nowrap">
-                {fmtTime(barPct * (duration || 0))}
+            {scrubbing && activePct !== null && (
+              <div className="absolute left-1/2 -translate-x-1/2 -top-9 px-3 py-1 rounded-full hg-chip-strong backdrop-blur-md text-[13px] font-bold tabular-nums whitespace-nowrap pointer-events-none elev-2"
+                style={{ boxShadow: "0 4px 16px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.14)" }}>
+                <span className="text-white">{fmtTime(activePct * (duration || 0))}</span>
+                <span className="hg-ink-4 font-medium"> / {fmtTime(duration)}</span>
               </div>
             )}
           </div>

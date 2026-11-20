@@ -77,6 +77,8 @@ export default function FeedItemChrome({
   onBarDown, onBarMove, onBarUp, onRetryStream, toast,
 }: Props) {
   const episodes = meta.episodes;
+  const activePct = barPct ?? (scrub ? scrub.pct / 100 : null);
+  const scrubbing = isActive && activePct !== null;
 
   return (
     <>
@@ -277,38 +279,60 @@ export default function FeedItemChrome({
         </div>
       )}
 
-      {/* 移动端：标题 + 详情标签 + 进度线
-          不加任何压暗层——黑边彻底去掉，全靠文字阴影保读；
-          进度条轨道几乎不可见，只用白点标播放位置。 */}
-      {!fs && !clean && !isDesktop && (
+      {/* 移动端：标题 + 详情标签 + 底部进度条（横拖画面或直拖底栏时统一突出显示下方进度条，不在屏幕中央叠进度条） */}
+      {!fs && !isDesktop && (!clean || scrubbing) && (
         <div className="absolute inset-x-0 z-20 pointer-events-none" style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
-          <div className="mobile-video-meta-copy relative pb-2 flex items-center gap-2">
-            <p className="flex-1 min-w-0 text-[15px] font-semibold leading-snug hg-ink-2 hg-ov-shadow-strong clamp-2">{meta.title}</p>
-          </div>
-          <div className="relative pt-1.5 pb-2.5">
-            <div className="mobile-video-meta-copy flex flex-wrap items-center gap-2">
-              <Button aria-label="视频详情" onClick={() => setPanel("detail")}
-                className="min-h-11 flex items-center gap-0.5 text-[12px] font-medium hg-ink-3 hg-ov-shadow-strong pressable pointer-events-auto">
-                {kind === "post" ? "详情与标签" : `详情 · 第 ${curEp} 集`}<IChevR size={11} />
-              </Button>
+          {!clean && (
+            <div className={`mobile-video-meta-copy relative pb-2 flex items-center gap-2 transition-opacity duration-150 ${scrubbing ? "opacity-35" : ""}`}>
+              <p className="flex-1 min-w-0 text-[15px] font-semibold leading-snug hg-ink-2 hg-ov-shadow-strong clamp-2">{meta.title}</p>
             </div>
-            {isActive && <div ref={barRef} className="mx-4 -mt-0.5 -mb-2.5 relative pointer-events-auto" style={{ height: 34, touchAction: "none" }}
-              onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={(e) => onBarUp(e, false)} onPointerCancel={(e) => onBarUp(e, true)}>
-              {/* 轨道：几乎看不见，只暗示可拖动 */}
-              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[2px] rounded-full" style={{ background: "rgba(255,255,255,.1)" }}>
-                <PlaybackProgress clock={playbackClock} duration={duration} preview={barPct} className="h-full rounded-full"
-                  style={{ background: "rgba(255,255,255,.26)", transition: barPct !== null ? "none" : "width .25s linear" }} />
+          )}
+          <div className="relative pt-1.5 pb-2.5">
+            {!clean && (
+              <div className={`mobile-video-meta-copy flex flex-wrap items-center gap-2 transition-opacity duration-150 ${scrubbing ? "opacity-35" : ""}`}>
+                <Button aria-label="视频详情" onClick={() => setPanel("detail")}
+                  className="min-h-11 flex items-center gap-0.5 text-[12px] font-medium hg-ink-3 hg-ov-shadow-strong pressable pointer-events-auto">
+                  {kind === "post" ? "详情与标签" : `详情 · 第 ${curEp} 集`}<IChevR size={11} />
+                </Button>
               </div>
-              {/* 进度点：整个进度条唯一的实心元素 */}
-              <PlaybackProgress clock={playbackClock} duration={duration} preview={barPct} position className="absolute top-1/2 w-[7px] h-[7px] rounded-full bg-white pointer-events-none"
+            )}
+            {isActive && <div ref={barRef} data-seek-bar data-scrubbing={scrubbing || undefined}
+              className="-mt-0.5 -mb-2.5 relative pointer-events-auto"
+              style={{
+                height: 36,
+                touchAction: "none",
+                marginLeft: "calc(var(--sal, 0px) + 16px)",
+                marginRight: "calc(var(--sar, 0px) + 16px)",
+              }}
+              onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={(e) => onBarUp(e, false)} onPointerCancel={(e) => onBarUp(e, true)}>
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full overflow-hidden"
                 style={{
+                  height: scrubbing ? 6 : 2,
+                  background: scrubbing ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.14)",
+                  boxShadow: scrubbing ? "0 2px 10px rgba(0,0,0,.48)" : "none",
+                  transition: "height .16s cubic-bezier(.2,0,0,1), background-color .16s ease, box-shadow .16s ease",
+                }}>
+                <PlaybackProgress clock={playbackClock} duration={duration} preview={activePct} className="h-full rounded-full"
+                  style={{
+                    background: scrubbing ? "#fff" : "rgba(255,255,255,.32)",
+                    boxShadow: scrubbing ? "0 0 10px rgba(255,255,255,.55)" : "none",
+                    transition: scrubbing ? "none" : "width .25s linear, background-color .16s ease",
+                  }} />
+              </div>
+              <PlaybackProgress clock={playbackClock} duration={duration} preview={activePct} position
+                className="absolute top-1/2 rounded-full bg-white pointer-events-none"
+                style={{
+                  width: scrubbing ? 14 : 7,
+                  height: scrubbing ? 14 : 7,
                   transform: "translate(-50%, -50%)",
-                  boxShadow: "0 0 8px rgba(0,0,0,.55)",
-                  transition: barPct !== null ? "none" : "left .25s linear",
+                  boxShadow: scrubbing ? "0 0 0 4px rgba(255,255,255,.24), 0 2px 8px rgba(0,0,0,.6)" : "0 0 8px rgba(0,0,0,.55)",
+                  transition: scrubbing ? "width .14s ease, height .14s ease, box-shadow .14s ease" : "left .25s linear, width .14s ease, height .14s ease, box-shadow .14s ease",
                 }} />
-              {barPct !== null && (
-                <div className="absolute left-1/2 -translate-x-1/2 -top-6 px-2.5 py-1 rounded-md hg-chip-strong backdrop-blur-md text-[13px] font-bold tabular-nums whitespace-nowrap">
-                  {fmtTime(barPct * (duration || 0))}
+              {scrubbing && activePct !== null && (
+                <div className="absolute left-1/2 -translate-x-1/2 -top-9 px-3 py-1 rounded-full hg-chip-strong backdrop-blur-md text-[13px] font-bold tabular-nums whitespace-nowrap pointer-events-none elev-2"
+                  style={{ boxShadow: "0 4px 16px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.14)" }}>
+                  <span className="text-white">{fmtTime(activePct * (duration || 0))}</span>
+                  <span className="hg-ink-4 font-medium"> / {fmtTime(duration)}</span>
                 </div>
               )}
             </div>}
@@ -316,19 +340,8 @@ export default function FeedItemChrome({
         </div>
       )}
 
-      {/* 横拖定位浮层 */}
-      {!isDesktop && scrub && (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none" style={{ background: "rgba(0,0,0,.25)" }}>
-          <span className="text-[26px] font-bold hg-ink tabular-nums hg-ov-shadow">{fmtTime(scrub.target)}</span>
-          <span className="text-[12px] hg-ink-4 mt-1 tabular-nums">/ {fmtTime(duration)}</span>
-          <div className="mt-4 w-[62%] h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.25)" }}>
-            <div className="h-full bg-white" style={{ width: `${scrub.pct}%` }} />
-          </div>
-        </div>
-      )}
-
       {/* 暂停 / 缓冲 */}
-      {isActive && paused && !err && (
+      {isActive && paused && !err && !scrubbing && (
         <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
           <span className="w-[66px] h-[66px] rounded-full flex items-center justify-center backdrop-blur-md"
             style={{ background: "rgba(0,0,0,.55)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.12)" }}>

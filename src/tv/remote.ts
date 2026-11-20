@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef } from "react";
 import { addPluginListener } from "@tauri-apps/api/core";
 
-export type RemoteKey = "up" | "down" | "left" | "right" | "confirm" | "back" | "playPause" | "play" | "pause" | "next" | "previous";
+export type RemoteDigit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+export type RemoteKey = "up" | "down" | "left" | "right" | "confirm" | "back" | "playPause" | "play" | "pause" | "next" | "previous" | RemoteDigit;
 type Scope = { id: string; priority?: number; onKey: (key: RemoteKey) => boolean | void };
 const scopes: Scope[] = [];
 let installed = false, lastBack = -Infinity;
@@ -75,13 +76,14 @@ function dispatch(key: RemoteKey) {
   }
   navigate(key);
 }
-const keys: Record<string, RemoteKey> = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right", Enter:"confirm", " ":"confirm", Escape:"back", Backspace:"back", BrowserBack:"back", GoBack:"back", MediaPlayPause:"playPause", MediaPlay:"play", MediaPause:"pause", MediaTrackNext:"next", MediaTrackPrevious:"previous" };
-const eventKey = (event: KeyboardEvent) => keys[event.key] || ({ 23:"confirm", 4:"back", 461:"back", 179:"playPause" } as Record<number, RemoteKey>)[event.keyCode];
+const keys: Record<string, RemoteKey> = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right", Enter:"confirm", " ":"confirm", Escape:"back", Backspace:"back", BrowserBack:"back", GoBack:"back", MediaPlayPause:"playPause", MediaPlay:"play", MediaPause:"pause", MediaTrackNext:"next", MediaTrackPrevious:"previous", "0":"0", "1":"1", "2":"2", "3":"3", "4":"4", "5":"5", "6":"6", "7":"7", "8":"8", "9":"9" };
+const keyCodeDigit = (code: number): RemoteDigit | undefined => (code >= 48 && code <= 57 ? String(code - 48) as RemoteDigit : code >= 96 && code <= 105 ? String(code - 96) as RemoteDigit : undefined);
+const eventKey = (event: KeyboardEvent) => keys[event.key] || keyCodeDigit(event.keyCode) || ({ 23:"confirm", 4:"back", 461:"back", 179:"playPause" } as Record<number, RemoteKey>)[event.keyCode];
 /** Exactly one keyboard listener and one native back subscription per WebView. */
 export function installRemoteController() {
   if (installed) return; installed = true;
   const pressed = new Set<RemoteKey>();
-  const onePerPress = new Set<RemoteKey>(["confirm","back","playPause","play","pause","next","previous"]);
+  const onePerPress = new Set<RemoteKey>(["confirm","back","playPause","play","pause","next","previous","0","1","2","3","4","5","6","7","8","9"]);
   let backReleased = -Infinity;
   window.addEventListener("keydown", event => {
     const key = eventKey(event);

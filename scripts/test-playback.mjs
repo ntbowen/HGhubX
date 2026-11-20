@@ -152,7 +152,12 @@ async function speedMenuKeyboardChecks(page, paused) {
   await assertSelection(1);
 }
 async function gestureChecks(page) {
-  await page.goto(`${report.ui}/tests/player-seek.html?diagnostics=1&proxy=${encodeURIComponent(report.media)}`);
+  await page.addInitScript(() => {
+    const { promise, resolve } = Promise.withResolvers();
+    window.__playGate = promise;
+    window.__releasePlay = resolve;
+  });
+  await page.goto(`${report.ui}/tests/player-seek.html?diagnostics=1&swipe-ep=1&proxy=${encodeURIComponent(report.media)}`);
   const guide = page.getByRole("dialog", { name: "视频长按操作提示", exact: true });
   await guide.waitFor({ state: "visible" });
   await page.waitForFunction(() => document.querySelector("video")?.paused);
@@ -181,7 +186,44 @@ async function gestureChecks(page) {
   await tap(); await tap();
   await page.waitForFunction(paused => document.querySelector('video').paused !== paused, wasPaused);
   assert.equal(await clean(), 'false', 'Double tap restores chrome and toggles playback once');
-  return {singleTapMs};
+  await page.evaluate(() => {
+    const surface = document.querySelector('video').parentElement.parentElement;
+    const bounds = surface.getBoundingClientRect();
+    surface.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 92, pointerType: 'touch', button: 0, clientX: bounds.x + 80, clientY: bounds.y + 220 }));
+    surface.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 92, pointerType: 'touch', button: 0, clientX: bounds.x + 220, clientY: bounds.y + 220 }));
+  });
+  await page.waitForFunction(() => document.querySelector('[data-seek-bar]')?.dataset.scrubbing === 'true');
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('.player-root *')].some(el => {
+    const r = el.getBoundingClientRect();
+    return r.top > 120 && r.bottom < 380 && el.textContent?.includes('/ 1:30');
+  })), false, 'Horizontal gesture scrub must only highlight the bottom progress bar without a center-screen bar');
+  await page.evaluate(() => {
+    const surface = document.querySelector('video').parentElement.parentElement;
+    const bounds = surface.getBoundingClientRect();
+    surface.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 92, pointerType: 'touch', button: 0, clientX: bounds.x + 220, clientY: bounds.y + 220 }));
+  });
+  await page.waitForFunction(() => !document.querySelector('[data-seek-bar]')?.dataset.scrubbing);
+  // 2.2.0 反馈回归：切集过渡期（下一集地址未解析）手势 overlay 必须常驻。
+  // 修复前第二划落在卸载后的封面/滚动列表上被丢弃或切到别的视频；修复后集数连加且视频不变。
+  await page.evaluate(() => window.playerSeekFixture.setLogging(true));
+  const swipeUp = () => page.evaluate(() => {
+    const surface = document.querySelector('[data-mobile-hold-target]') || document.querySelector('.player-root section');
+    const b = surface.getBoundingClientRect();
+    const x = b.x + b.width / 2, y0 = b.y + b.height * .7, y1 = b.y + b.height * .3;
+    const at = y => ({ bubbles: true, pointerId: 92, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1, clientX: x, clientY: y });
+    surface.dispatchEvent(new PointerEvent('pointerdown', at(y0)));
+    surface.dispatchEvent(new PointerEvent('pointermove', at(y1)));
+    surface.dispatchEvent(new PointerEvent('pointerup', { ...at(y1), buttons: 0 }));
+  });
+  await swipeUp();
+  await page.getByText('详情 · 第 2 集', { exact: true }).first().waitFor();
+  await swipeUp();
+  await page.getByText('详情 · 第 3 集', { exact: true }).first().waitFor();
+  await page.evaluate(() => window.__releasePlay());
+  await page.waitForFunction(() => window.playerSeekFixture.logs.some(e => e.event === 'play.resolve' && e.data.video_id === 991 && e.data.episode === 3));
+  assert.equal(await page.evaluate(() => window.playerSeekFixture.logs.some(e => e.event === 'play.resolve' && e.data.video_id === 992)), false,
+    'Fast episode swipes must stay on the same video');
+  return { singleTapMs, bottomOnlyScrub: true, fastSwipeEpisodes: [2, 3], sameVideo: true };
 }
 
 // issue #142 回归：手机竖屏视口 + 真实竖屏源（360x640，高>宽）。

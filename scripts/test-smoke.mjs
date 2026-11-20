@@ -11,6 +11,7 @@ const tests = [
   ["storage-migration", "scripts/test-storage-migration.mjs"],
   ["line-selection", "scripts/test-line-selection.mjs"],
   ["diagnostic-copy", "scripts/test-diagnostic-copy.mjs"],
+  ["ui-feedback", "scripts/test-ui-feedback.mjs"],
 ];
 
 const failed = [];

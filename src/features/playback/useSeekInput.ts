@@ -30,6 +30,7 @@ export function useSeekInput({ time, duration, enabled = true, resetKey, onSeek,
   const displayTime = preview ?? time;
   return {
     time: displayTime,
+    scrubbing: preview !== null,
     inputProps: {
       disabled: !seekable, min: 0, max: seekable ? duration : 1, step: .01,
       value: Math.max(0, Math.min(displayTime, seekable ? duration : 0)),

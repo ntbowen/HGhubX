@@ -32,8 +32,12 @@
 .tv-player-control-row > button { flex-shrink: 0; min-width: 4.3333rem; min-height: 2.5556rem; }
 .tv-player-progress-row { margin-bottom: 0.7778rem; }
 .tv-player-progress-row > .tv-player-progress { width: 100%; min-width: 7.7778rem; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 0.5rem; padding: 0.5556rem 0.7778rem; }
-.tv-player-progress-track { height: 0.2778rem; overflow: hidden; background: #5c6c78; border-radius: 0.4444rem; }
-.tv-player-progress-track > span { display: block; height: 100%; background: #7bd6ff; border-radius: inherit; }
+.tv-player-progress-track { height: 0.2778rem; overflow: hidden; background: #5c6c78; border-radius: 0.4444rem; transition: height 140ms ease, background-color 140ms ease; }
+.tv-player-progress-track > span { display: block; height: 100%; background: #7bd6ff; border-radius: inherit; transition: background-color 140ms ease; }
+.tv-player-progress[data-seeking="true"] { background: #1c3f58; border-color: var(--tv-accent); box-shadow: 0 0 1.2rem rgba(96, 205, 255, .28); }
+.tv-player-progress[data-seeking="true"] .tv-player-progress-track { height: 0.5rem; background: rgba(255, 255, 255, .28); }
+.tv-player-progress[data-seeking="true"] .tv-player-progress-track > span { background: #fff; }
+.tv-player-progress[data-seeking="true"] .tv-player-progress-time { color: #fff; font-weight: 700; }
 .tv-player-progress-time { text-align: right; font-size: 0.8889rem; font-variant-numeric: tabular-nums; }
 .tv-player-seek-hint { color: #a3e6ff; font-size: 1.0556rem; }
 .tv-player-loading { position: absolute; top: 44%; left: 50%; transform: translate(-50%, -50%); padding: 0.6667rem 1.2222rem; background: rgba(9, 24, 36, .9); border-radius: 0.5556rem; font-size: 1.1111rem; }
