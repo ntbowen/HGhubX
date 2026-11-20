@@ -104,7 +104,7 @@ jobs:
               sudo sed -i -E 's|^URIs:.*|URIs: https://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
             fi
             if [ -f /etc/apt/sources.list ]; then
-              sudo sed -i -E 's|https?://[^/[:space:]]+/ubuntu/?|https://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list
+              sudo sed -i -E 's#https?://[^/[:space:]]+/ubuntu/*([/[:space:]]|$)#https://mirrors.edge.kernel.org/ubuntu/\1#g' /etc/apt/sources.list
             fi
             sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
             sudo apt-get -o Dir::Cache::archives="$HOME/apt-webkit-debs" -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
@@ -716,7 +716,7 @@ jobs:
             sudo find /etc/apt/sources.list.d -maxdepth 1 -type f ! -name 'ubuntu.sources' -delete
             printf 'https://mirrors.edge.kernel.org/ubuntu/\nhttp://archive.ubuntu.com/ubuntu/\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
             if [ -f /etc/apt/sources.list ]; then
-              sudo sed -i -E 's|https?://[^/[:space:]]+/ubuntu/?|https://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list
+              sudo sed -i -E 's#https?://[^/[:space:]]+/ubuntu/*([/[:space:]]|$)#https://mirrors.edge.kernel.org/ubuntu/\1#g' /etc/apt/sources.list
             fi
             sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
             sudo apt-get -o Dir::Cache::archives="$HOME/apt-webkit-debs" -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
