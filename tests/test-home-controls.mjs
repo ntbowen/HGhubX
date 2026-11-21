@@ -90,6 +90,7 @@ try {
   await page.screenshot({ path: path.join(output, "home-clean.png") });
   await page.getByRole("button", { name: "锁定屏幕", exact: true }).click();
   assert.equal(await probe("locked"), true);
+  assert.equal(await page.locator(".mobile-clean-lock").count(), 0, "Locked clean mode must hide the lock icon");
   await page.evaluate(() => { window.homeControlsProbe.setLocked(false); window.homeControlsProbe.setClean(false); });
   console.log("✓ clean-screen playback shows a right-center screen-lock control");
 
@@ -148,6 +149,10 @@ try {
   await fullscreenTime.waitFor();
   assert.match(await fullscreenTime.innerText(), /^00:00 \/ 02:00$/);
   assert.equal(await page.locator(".mobile-fs-duration").count(), 0);
+  const fullscreenSpeed = page.locator(".mobile-fs-controls [aria-label^='切换倍速']");
+  await fullscreenSpeed.click();
+  assert.equal(await probe("rate"), 1.25);
+  assert.equal(await page.getByRole("button", { name: "解除倍速锁定", exact: true }).count(), 0);
   await page.evaluate(() => {
     window.homeControlsProbe.setClean(true);
     window.homeControlsProbe.setFsIdle(true);

@@ -22,6 +22,7 @@ import { useFeedTouchGestures } from "./useFeedTouchGestures";
 import { useFeedActions, type FeedMeta } from "./useFeedActions";
 import FeedItemChrome from "./FeedItemChrome";
 import { FeedMobileTopTools, FeedPlayerShellChrome } from "./FeedPlayerShellChrome";
+import { tr } from "../../shared/i18n";
 
 type Props = {
   videoIds: number[];
@@ -47,7 +48,7 @@ export default function Feed({
   const {
     isLiked, isFav, setLiked, setCollected, setFollowing, actionPending, accountScope,
     muted, setMuted, volume, setVolume, toast, addHistory, user, setLoginOpen,
-    swipeEp, setSwipeEp, preferHevc, setPreferHevc,
+    swipeEp, setSwipeEp, preferHevc, setPreferHevc, ambientGlow,
   } = store;
   const isDesktop = !isMobile;
   const holdGuide = useMobileHoldGuide();
@@ -141,7 +142,7 @@ export default function Feed({
   } = useFeedViewport({
     playerRootRef, boxRef, videoRef, pinchRef, videoIds, effectiveVideoIds, startIndex, mode, kind, active,
     isItemAllowed, isDesktop, fs, setFs, setClean, paused, wake, swipeEp, epMap, setEpMap,
-    episodesByVideo, setPanel, onNearEnd,
+    episodesByVideo, setPanel, onNearEnd, toast,
   });
 
   const curId = effectiveVideoIds[index];
@@ -162,7 +163,7 @@ export default function Feed({
   const lockControls = () => {
     setPanel(null);
     setControlsLocked(true);
-    toast("已锁定屏幕", "info", "screen-lock");
+    toast(tr("已锁定屏幕"), "info", "playback-hint");
   };
   const togglePlayback = useCallback(() => {
     videoRef.current?.toggle();
@@ -171,7 +172,7 @@ export default function Feed({
   const toggleSwipeEp = () => {
     const next = !swipeEp;
     setSwipeEp(next);
-    toast(next ? "上下划切集已开启" : "上下划切集已关闭", "info", "swipe-toggle");
+    toast(next ? tr("上下划切集已开启") : tr("上下划切集已关闭"), "info", "playback-hint");
   };
 
   useEffect(() => { setTagMenu(false); setTagSelection([]); }, [curId, store.lineEpoch, accountScope]);
@@ -208,6 +209,26 @@ export default function Feed({
   const playUrl = preferHevc && hevcUrl ? hevcUrl : mainUrl;
   const measurementKey = JSON.stringify([accountScope, store.lineEpoch, permissionKey, playKey, playUrl]);
   const videoSize = vsize.key === measurementKey ? vsize : { key: measurementKey, w: 0, h: 0 };
+  /* Keep playback hints in one slot ("playback-hint"), and in fullscreen wait for
+     the incoming source's decoded aspect ratio so landscape stage rotation settles
+     before the toast mounts. */
+  const [pendingEpisodeToast, setPendingEpisodeToast] = useState<string | null>(null);
+  const showEpisodeToast = useCallback((msg: string, immediate = false) => {
+    if (immediate || isDesktop || !fs) { toast(msg, "info", "playback-hint"); return; }
+    setPendingEpisodeToast(msg);
+  }, [fs, isDesktop, toast]);
+  useEffect(() => {
+    if (!pendingEpisodeToast) return;
+    if (err) { setPendingEpisodeToast(null); return; }
+    if (!fs || isDesktop) {
+      setPendingEpisodeToast(null);
+      toast(pendingEpisodeToast, "info", "playback-hint");
+      return;
+    }
+    if (videoSize.key !== measurementKey || videoSize.h <= 0 || videoSize.w <= 0) return;
+    setPendingEpisodeToast(null);
+    toast(pendingEpisodeToast, "info", "playback-hint");
+  }, [err, fs, isDesktop, measurementKey, pendingEpisodeToast, toast, videoSize]);
   // 等播放画面就绪再提示，启动动画/协议、加载失败和其他面板不叠加教程。
   const showHoldGuide = !isDesktop && !holdGuide.seen && active && allowed
     && !!playUrl && duration > 0 && !err && !panel && !tagMenu && !controlsLocked;
@@ -289,7 +310,7 @@ export default function Feed({
         title: post?.title || "",
         cover: post?.cover || "",
         desc: post?.content || post?.desc || "",
-        author: post?.author?.name || "吃瓜",
+        author: post?.author?.name || tr("吃瓜"),
         authorId: post?.author?.id || -1,
         tags: post?.tags || [],
         score: 0,
@@ -320,13 +341,13 @@ export default function Feed({
   const landscapeVideo = videoSize.w > 0 && videoSize.h > 0 && videoSize.w > videoSize.h;
 
   const {
-    zoom, setZoom, holdSpeed, holdSlow, speedLock, setSpeedLock, lockArmed, speedLockTargetRef,
+    zoom, setZoom, holdSpeed, holdSlow,
     scrub, barRef, barPct, onDown, onMove, onUp, onBarDown, onBarMove, onBarUp,
   } = useFeedTouchGestures({
     boxRef, videoRef, pinchRef, playbackClock, isDesktop, active, controlsLocked, showHoldGuide,
     rotated, fs, clean, setClean, idle, setIdle, arm, wake, swipeEp, kind, curId, epMap, setEpMap,
     episodesLength: episodes.length, effectiveLength: effectiveVideoIds.length, go,
-    duration, playUrl, playKey, setPanel, setTagMenu, toast,
+    duration, playUrl, playKey, setPanel, setTagMenu, toast, episodeToast: showEpisodeToast,
   });
   useEffect(() => { setBarScrubbing(barPct !== null || scrub !== null); }, [barPct, scrub]);
 
@@ -339,8 +360,8 @@ export default function Feed({
     isLiked, isFav, setLiked, setCollected, setFollowing, actionPending, toast,
   });
 
-  /* 倍速：中心小方块打开偏好，右上长按 2x 起、左右滑换挡，左下 0.5x。 */
-  const effRate = holdSpeed || speedLock || (holdSlow ? 0.5 : rate);
+  /* 倍速：右上长按临时加速、左右滑换挡，左下长按 0.5x；松手恢复持久倍速。 */
+  const effRate = holdSpeed || (holdSlow ? 0.5 : rate);
   /* The pinch-zoom reset capsule fades in place without unmounting (issue #19). */
   const capsuleOn = !fs && !clean && !isDesktop && zoom.s > 1.05;
 
@@ -368,7 +389,7 @@ export default function Feed({
       request.then(value => {
         if (!mounted.current || actionContext.current.accountScope !== accountScope || actionContext.current.lineEpoch !== epoch) return;
         if (!value) {
-          setTagErrors(previous => ({ ...previous, [key]: "标签暂不可用，请重试" }));
+          setTagErrors(previous => ({ ...previous, [key]: tr("标签暂不可用，请重试") }));
           return;
         }
         if (kind === "post") setPosts(previous => ({ ...previous, [id]: value as Post }));
@@ -377,7 +398,7 @@ export default function Feed({
         setChecked(previous => ({ ...previous, [key]: true }));
       }).catch(error => {
         if (mounted.current && actionContext.current.accountScope === accountScope && actionContext.current.lineEpoch === epoch) {
-          setTagErrors(previous => ({ ...previous, [key]: error instanceof Error ? error.message : "标签暂不可用，请重试" }));
+          setTagErrors(previous => ({ ...previous, [key]: error instanceof Error ? error.message : tr("标签暂不可用，请重试") }));
         }
       });
     });
@@ -417,12 +438,12 @@ export default function Feed({
           video_id: curId, episode: curEp, resolved: !!streamUrl, kind: streamKind, host,
           status: raw.status ?? null, msg: String(raw.msg ?? "") || null,
         });
-        if (!streamUrl) throw new Error("暂无播放地址");
+        if (!streamUrl) throw new Error(tr("暂无播放地址"));
         setPlayUrls((m) => ({ ...m, [playKey]: streamUrl }));
         if (hevcStream) setHevcUrls((m) => ({ ...m, [playKey]: hevcStream }));
         if (kind === "video") addHistory(curId, curEp);
       })
-      .catch((e) => { if (alive) setErr((e as Error).message || "取播放地址失败"); });
+      .catch((e) => { if (alive) setErr((e as Error).message || tr("取播放地址失败")); });
       return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, curId, curEp, proxyRetry, allowed, permissionKey, requestPlay]);
@@ -559,31 +580,31 @@ export default function Feed({
 
   if (curId && mode === "home" && blocked) {
     return <div className="absolute inset-0 bg-black flex items-center justify-center" inert={!active || undefined} aria-hidden={!active || undefined}>
-      <Loader className="w-9 h-9 spinner" label="正在跳过内容" />
+      <Loader className="w-9 h-9 spinner" label={tr("正在跳过内容")} />
     </div>;
   }
 
   if (curId && filtering && !tagsReady && !tagErrors[tagKey]) {
     return <div className="absolute inset-0 bg-black flex items-center justify-center" inert={!active || undefined} aria-hidden={!active || undefined}>
-      <Loader className="w-9 h-9 spinner" label="正在加载内容" />
+      <Loader className="w-9 h-9 spinner" label={tr("正在加载内容")} />
     </div>;
   }
 
   if (curId && filtering && !tagsReady && tagErrors[tagKey]) {
     return <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-3" inert={!active || undefined} aria-hidden={!active || undefined}>
-      <span className="text-[13px] text-white/70">暂时无法加载内容</span>
+      <span className="text-[13px] text-white/70">{tr("暂时无法加载内容")}</span>
       <Button onClick={() => {
         setTagErrors(previous => { const next = { ...previous }; delete next[tagKey]; return next; });
         setProxyRetry(value => value + 1);
-      }} className="min-h-11 rounded-full bg-white/10 px-4 text-white">重试</Button>
+      }} className="min-h-11 rounded-full bg-white/10 px-4 text-white">{tr("重试")}</Button>
     </div>;
   }
 
   if (!effectiveVideoIds.length) {
     return <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-3" inert={!active || undefined} aria-hidden={!active || undefined}>
-      <span className="text-[14px] text-white/70">当前列表没有可播放内容</span>
+      <span className="text-[14px] text-white/70">{tr("当前列表没有可播放内容")}</span>
       <PreferenceStorageNotice className="mx-4 max-w-sm" />
-      {onBack && <Button onClick={onBack} className="min-h-11 rounded-full bg-white/10 px-5 text-white">返回</Button>}
+      {onBack && <Button onClick={onBack} className="min-h-11 rounded-full bg-white/10 px-5 text-white">{tr("返回")}</Button>}
     </div>;
   }
 
@@ -628,9 +649,10 @@ export default function Feed({
                       <>
                         {/* 老 WebView 不认识 inset 简写；四边写法保证缩放舞台铺满（#138）。 */}
                     <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, transform: isDesktop ? undefined : `translate3d(${zoom.x}px, ${zoom.y}px, 0) scale(${zoom.s})`, transformOrigin: "center center", transition: isDesktop || zoom.g ? "none" : "transform .18s ease-out" }}>
-                      <VideoSurface ref={videoRef} src={playUrl} poster={posterUrl} autoPlay active={active && !tagMenu && !showHoldGuide && !searching} muted={muted}
+                      <VideoSurface ref={videoRef} src={playUrl} poster={posterUrl} autoPlay active={active && !tagMenu && !showHoldGuide && !searching} muted={muted} balanceVolume={!isDesktop && store.balanceVolume}
                         diagnosticContext={{ active: active && !tagMenu && !showHoldGuide && !searching, view: mode, kind, video_id: curId, episode: curEp }}
                         volume={volume} rate={effRate}
+                        ambientGlow={ambientGlow}
                         measurementKey={measurementKey}
                         fit={!isDesktop && landscapeVideo && !fs && !vpLandscape ? portraitFit : "contain"}
                         onClick={() => { if (isDesktop) videoRef.current?.toggle(); }}
@@ -650,7 +672,7 @@ export default function Feed({
                           setErr(m); setWaiting(false);
                           if (preferHevc && hevcUrl) {
                             setPreferHevc(false);
-                            toast("高清播不了，已切回标准", "info");
+                            toast(tr("高清播不了，已切回标准"), "info");
                           }
                         }} />
                       </div>
@@ -672,7 +694,7 @@ export default function Feed({
                 )}
 
                 <FeedItemChrome
-                  isActive={isActive} isDesktop={isDesktop} fs={fs} clean={clean} rotated={rotated} mode={mode} kind={kind}
+                  isActive={isActive} isDesktop={isDesktop} fs={fs} clean={clean} controlsLocked={controlsLocked} rotated={rotated} mode={mode} kind={kind}
                   title={title} index={index} effectiveLength={effectiveVideoIds.length} bottomInset={bottomInset}
                   curEp={curEp} duration={duration} meta={meta} post={post} hevcUrl={hevcUrl}
                   preferHevc={preferHevc} setPreferHevc={setPreferHevc}
@@ -699,11 +721,10 @@ export default function Feed({
         </div>
 
         <FeedPlayerShellChrome
-          videoRef={videoRef} speedLockTargetRef={speedLockTargetRef} barRef={barRef} playbackClock={playbackClock}
+          videoRef={videoRef} barRef={barRef} playbackClock={playbackClock}
           isDesktop={isDesktop} active={active} fs={fs} idle={idle} rotated={rotated} vpLandscape={vpLandscape}
           theater={theater} setTheater={setTheater} fullscreen={fullscreen} controlsLocked={controlsLocked}
           paused={paused} duration={duration} rate={rate} setRate={setRate} effRate={effRate}
-          holdSpeed={holdSpeed} holdSlow={holdSlow} speedLock={speedLock} setSpeedLock={setSpeedLock} lockArmed={lockArmed}
           muted={muted} setMuted={setMuted} volume={volume} setVolume={setVolume} swipeEp={swipeEp} setSwipeEp={setSwipeEp}
           preferHevc={preferHevc} setPreferHevc={setPreferHevc} portraitFit={portraitFit} setPortraitFit={setPortraitFit}
           playKey={playKey} curId={curId} curEp={curEp} index={index} effectiveLength={effectiveVideoIds.length}
@@ -719,23 +740,23 @@ export default function Feed({
       <FeedMobileTopTools
         isDesktop={isDesktop} controlsLocked={controlsLocked} active={active && !searching} fs={fs} idle={idle}
         rotated={rotated} clean={clean} currentQuality={playUrl ? (preferHevc && hevcUrl && playUrl === hevcUrl ? "HD" : "SD") : null}
-        searchLabel={kind === "post" ? "搜吃瓜帖" : "搜短剧"}
+        searchLabel={kind === "post" ? tr("搜吃瓜帖") : tr("搜短剧")}
         onSearch={mode === "context" ? () => { closePanels(); setSearching(true); } : undefined}
       />
       {searching && mode === "context" && active && (
         <InplaceSearch kind={kind} wide={isDesktop} onClose={() => setSearching(false)}
-          onOpenVideo={(v, list, kw) => store.push({ kind: "feed", videoIds: list.map(x => x.id), index: list.findIndex(x => x.id === v.id), title: kw ? `搜索 · ${kw}` : "搜索" })}
+          onOpenVideo={(v, list, kw) => store.push({ kind: "feed", videoIds: list.map(x => x.id), index: list.findIndex(x => x.id === v.id), title: kw ? tr("搜索 · {0}", kw) : tr("搜索") })}
           onOpenPost={(p) => store.push({ kind: "post", id: p.id })} />
       )}
       <TagBlockMenu open={active && tagMenu} tags={meta.tags} initialSelected={tagSelection} onClose={() => setTagMenu(false)} onSettings={openPreferences} />
       {!isDesktop && <MobileHoldGuide open={showHoldGuide} onClose={holdGuide.dismiss} target={holdTargetRef} bottomInset={bottomInset} />}
-      {controlsLocked && <PlaybackLock active={active} rotated={rotated} immersive={!isDesktop && fs && !rotated}
-        onBlocked={() => toast("轻触即可解锁", "info", "screen-lock")}
+      {controlsLocked && <PlaybackLock active={active} rotated={rotated} immersive={!isDesktop && fs && !rotated} hideUnlockUntilTapped={!isDesktop}
+        onBlocked={() => toast(tr("轻触即可解锁"), "info", "playback-hint")}
         onUnlock={() => {
           setControlsLocked(false);
           setClean(false);
           wake();
-          toast("已解锁", "info", "screen-lock");
+          toast(tr("已解锁"), "info", "playback-hint");
         }} />}
     </div>
   );

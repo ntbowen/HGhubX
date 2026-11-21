@@ -29,7 +29,9 @@
   [`useInlinePlayerFullscreen.tsx`](../../src/features/playback/useInlinePlayerFullscreen.tsx)、
   [`src/shared/lib/fullscreen.ts`](../../src/shared/lib/fullscreen.ts)、
   [`mediaTransport.ts`](../../src/features/playback/mediaTransport.ts)、
-  [`mediaErrors.ts`](../../src/features/playback/mediaErrors.ts)。
+  [`mediaErrors.ts`](../../src/features/playback/mediaErrors.ts)、
+  [`AmbientGlow.tsx`](../../src/features/playback/AmbientGlow.tsx)、
+  [`balanceVolume.ts`](../../src/features/playback/balanceVolume.ts)。
 - 后端传输：[`src-tauri/src/ios_media_http.rs`](../../src-tauri/src/ios_media_http.rs)、
   [`src-tauri/src/linux_http.rs`](../../src-tauri/src/linux_http.rs)、
   [`src-tauri/src/media/mod.rs`](../../src-tauri/src/media/mod.rs)、
@@ -93,12 +95,13 @@
   变化后按旧像素偏移切到别的剧（issue #180）。移动端 Feed 底部信息容器保持 `pointer-events: none`
   （仅对详情按钮与进度条显式开启命中），避免跨宽布局盒遮挡右侧操作栏（如「全屏」）与画面手势。CSS 旋转舞台（`.fs-landscape`）上
   的分区判定/横拖定位/上下划切集/长按换挡都先经 `getHoldPoint` 把屏幕坐标换算回
-  播放器坐标（rotate(90deg)：播放器 x=屏幕 dy、y=屏幕 -dx），长按锁定的命中检测则用
-  顶部倍速胶囊的实时 DOM 矩形（`isInsideHoldTarget`，旋转后同样成立）：手指移动 ≥12px
-  且移入胶囊才提示「松手即可锁定」，松手位置再验一次命中。全屏 overlay 的 touch-action
+  播放器坐标（rotate(90deg)：播放器 x=屏幕 dy、y=屏幕 -dx）。长按加速/减速只临时改变倍速，
+  松手恢复原速度；不提供拖动到顶部胶囊的持久锁定，持久倍速统一通过全屏倍速按钮或
+  「更多」里的倍速选项设置。全屏 overlay 的 touch-action
   固定为 none，避免原生 pan-y 把视觉横滑取消掉。
 - 媒体错误：hls fatal 显示 `type/details/status`，原生错误走
   `mediaErrorMessage`；手动重试走同一个 `useProxyPlaybackRecovery` 路径。
+- 移动端「平衡音量」（`balanceVolume.ts`，`hghubx_app_v1.balanceVolume`，默认 `false`）：仅在支持 MSE + Web Audio 的移动端环境展示入口并启用；首次显式手势解锁 `AudioContext` 后挂接输入侧原始 RMS 分析、扣除 `video.volume` 偏移的慢速 AGC 与峰值限幅器；跨源无 CORS / 原生非 `blob:` 源不挂接 `MediaElementAudioSourceNode`（标记 `unsupported`），页面失活或暂停时停止采样定时器并在无在播元素时挂起 `AudioContext`。
 
 ## 约束与失败行为
 

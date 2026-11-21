@@ -76,7 +76,7 @@ function Probe() {
   });
   return <div className="probe-stage">
     <FeedItemChrome
-      isActive isDesktop={false} fs={fsPreview} clean={clean} rotated={false} mode="home" kind="video" title="示例剧名"
+      isActive isDesktop={false} fs={fsPreview} clean={clean} controlsLocked={locked} rotated={false} mode="home" kind="video" title="示例剧名"
       index={0} effectiveLength={1} bottomInset={0} curEp={1} duration={120} meta={meta} hevcUrl="hevc.mp4"
       preferHevc={preferHevc} setPreferHevc={setPreferHevc}
       landscapeVideo={false} capsuleOn={false} zoom={{ s: 1, x: 0, y: 0, g: false }} setZoom={() => {}}
@@ -99,11 +99,10 @@ function Probe() {
       onSearch={contextSearch ? () => setOpenedTag("search") : undefined}
     />
     {fsPreview && <FeedPlayerShellChrome
-      videoRef={{ current: null }} speedLockTargetRef={{ current: null }} barRef={{ current: null }}
+      videoRef={{ current: null }} barRef={{ current: null }}
       playbackClock={clock} isDesktop={false} active fs idle={fsIdle} rotated={false} vpLandscape={false}
       theater={false} setTheater={() => {}} fullscreen={false} controlsLocked={false}
       paused={false} duration={120} rate={rate} setRate={setRate} effRate={rate}
-      holdSpeed={0} holdSlow={false} speedLock={0} setSpeedLock={() => {}} lockArmed={false}
       muted={muted} setMuted={setMuted} volume={1} setVolume={() => {}}
       swipeEp={swipeEp} setSwipeEp={setSwipeEp} preferHevc={preferHevc} setPreferHevc={setPreferHevc}
       portraitFit={portraitFit} setPortraitFit={setPortraitFit} playKey="preview"
